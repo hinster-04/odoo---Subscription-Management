@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from 'react';
+import { AdminLayout } from './admin/AdminLayout';
 
 const products = [
   {
@@ -199,10 +200,45 @@ function ForgotPasswordPage() {
 }
 
 export default function App() {
-  const path = window.location.pathname.replace(/\/+$/, '') || '/';
-  useEffect(() => { const title = path === '/login' ? 'Sign in | Brightloop' : path === '/signup' ? 'Create account | Brightloop' : path === '/forgot-password' ? 'Reset password | Brightloop' : 'Brightloop Software — Smarter software for every business'; document.title = title; }, [path]);
-  if (path === '/login') return <LoginPage />;
-  if (path === '/signup') return <SignupPage />;
-  if (path === '/forgot-password') return <ForgotPasswordPage />;
+  const [currentPath, setCurrentPath] = useState(
+    () => window.location.pathname.replace(/\/+$/, '') || '/'
+  );
+
+  useEffect(() => {
+    const handlePopState = () => {
+      setCurrentPath(window.location.pathname.replace(/\/+$/, '') || '/');
+    };
+    window.addEventListener('popstate', handlePopState);
+    return () => window.removeEventListener('popstate', handlePopState);
+  }, []);
+
+  const navigate = (toPath) => {
+    window.history.pushState({}, '', toPath);
+    setCurrentPath(toPath.replace(/\/+$/, '') || '/');
+    window.scrollTo(0, 0);
+  };
+
+  useEffect(() => {
+    if (!currentPath.startsWith('/admin')) {
+      const title =
+        currentPath === '/login'
+          ? 'Sign in | Brightloop'
+          : currentPath === '/signup'
+          ? 'Create account | Brightloop'
+          : currentPath === '/forgot-password'
+          ? 'Reset password | Brightloop'
+          : 'Brightloop Software — Smarter software for every business';
+      document.title = title;
+    }
+  }, [currentPath]);
+
+  if (currentPath.startsWith('/admin')) {
+    return <AdminLayout currentPath={currentPath} onNavigate={navigate} />;
+  }
+
+  if (currentPath === '/login') return <LoginPage />;
+  if (currentPath === '/signup') return <SignupPage />;
+  if (currentPath === '/forgot-password') return <ForgotPasswordPage />;
   return <LandingPage />;
 }
+
