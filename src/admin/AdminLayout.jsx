@@ -4,6 +4,8 @@ import { TopNav } from './components/TopNav';
 import { getRouteByPath } from './adminRoutes';
 import { DashboardPage } from './pages/DashboardPage';
 import { EmptyAdminPage } from './pages/EmptyAdminPage';
+import { QuotationsPage } from './pages/QuotationsPage';
+import { SubscriptionsPage } from './pages/SubscriptionsPage';
 import './admin.css';
 
 export function AdminLayout({ currentPath, onNavigate }) {
@@ -27,6 +29,8 @@ export function AdminLayout({ currentPath, onNavigate }) {
     activeRoute.id === 'dashboard' ||
     currentPath === '/admin' ||
     currentPath === '/admin/dashboard';
+  const isQuotations = activeRoute.id === 'quotations' || currentPath === '/admin/quotations';
+  const isSubscriptions = activeRoute.id === 'subscriptions' || currentPath === '/admin/subscriptions';
 
   return (
     <div className={`admin-app-root ${isCollapsed ? 'sidebar-collapsed' : ''}`}>
@@ -56,6 +60,10 @@ export function AdminLayout({ currentPath, onNavigate }) {
           <div className="admin-content-container">
             {isDashboard ? (
               <DashboardPage onNavigate={onNavigate} />
+            ) : isQuotations ? (
+              <QuotationsPage />
+            ) : isSubscriptions ? (
+              <SubscriptionsPage />
             ) : (
               <EmptyAdminPage route={activeRoute} />
             )}
