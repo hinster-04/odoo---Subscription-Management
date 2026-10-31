@@ -1,566 +1,1342 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { AdminIcon } from '../AdminIcons';
+import { quotationsApi, quotationTemplatesApi } from '../services/salesApi';
+import { peopleApi } from '../services/peopleApi';
 
-// ─── Local icon helpers ────────────────────────────────────────────────────────
-function QIcon({ name, size = 16 }) {
-    const p = {
-        width: size, height: size, viewBox: '0 0 24 24', fill: 'none',
-        stroke: 'currentColor', strokeWidth: 1.8,
-        strokeLinecap: 'round', strokeLinejoin: 'round', 'aria-hidden': true
-    };
-    const icons = {
-        plus: <><line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" /></>,
-        search: <><circle cx="11" cy="11" r="8" /><line x1="21" y1="21" x2="16.65" y2="16.65" /></>,
-        filter: <><polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3" /></>,
-        download: <><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><polyline points="7 10 12 15 17 10" /><line x1="12" y1="15" x2="12" y2="3" /></>,
-        send: <><line x1="22" y1="2" x2="11" y2="13" /><polygon points="22 2 15 22 11 13 2 9 22 2" /></>,
-        convert: <><path d="M21.5 2-5 5h4a8.5 8.5 0 0 1-17 0H1.5" /><path d="M2.5 22 7.5 17h-4a8.5 8.5 0 0 1 17 0h2" /></>,
-        eye: <><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7Z" /><circle cx="12" cy="12" r="3" /></>,
-        edit: <><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" /><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" /></>,
-        trash: <><polyline points="3 6 5 6 21 6" /><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6" /><path d="M10 11v6M14 11v6" /><path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2" /></>,
-        copy: <><rect x="9" y="9" width="13" height="13" rx="2" /><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" /></>,
-        check: <><polyline points="20 6 9 17 4 12" /></>,
-        chevDown: <><polyline points="6 9 12 15 18 9" /></>,
-        chevLeft: <><polyline points="15 18 9 12 15 6" /></>,
-        chevRight: <><polyline points="9 18 15 12 9 6" /></>,
-        x: <><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></>,
-        toggle: <><rect x="1" y="5" width="22" height="14" rx="7" /><circle cx="16" cy="12" r="3" /></>,
-        toggleOff: <><rect x="1" y="5" width="22" height="14" rx="7" /><circle cx="8" cy="12" r="3" /></>,
-    };
-    return <svg {...p}>{icons[name] ?? null}</svg>;
+function formatCurrency(val) {
+  const num = parseFloat(val) || 0;
+  return new Intl.NumberFormat('en-IN', {
+    style: 'currency',
+    currency: 'INR',
+    maximumFractionDigits: 2
+  }).format(num);
 }
 
-// ─── Status pill ───────────────────────────────────────────────────────────────
-const STATUS_MAP = {
-    Draft: 'status-neutral',
-    Sent: 'status-info',
-    Accepted: 'status-success',
-    Cancelled: 'status-danger',
-    Expired: 'status-warning',
-    Active: 'status-success',
-    Inactive: 'status-neutral',
-};
-function StatusPill({ status }) {
-    return <span className={`qp-status-pill ${STATUS_MAP[status] || 'status-neutral'}`}>{status}</span>;
+// ─── Status Badge ─────────────────────────────────────────────────────────────
+function StatusBadge({ status }) {
+  const s = (status || '').toLowerCase();
+  let badgeClass = 'badge-neutral';
+  if (s === 'accepted' || s === 'converted' || s === 'active') badgeClass = 'badge-success';
+  else if (s === 'sent') badgeClass = 'badge-blue';
+  else if (s === 'rejected') badgeClass = 'badge-danger';
+  else if (s === 'expired') badgeClass = 'badge-warning';
+
+  return (
+    <span className={`admin-badge ${badgeClass} capitalize`}>
+      {s}
+    </span>
+  );
 }
 
-// ─── Sample data ───────────────────────────────────────────────────────────────
-const SAMPLE_QUOTATIONS = [
-    { id: 'Q-2026-001', customer: 'Acme Corp', date: '2026-10-01', validUntil: '2026-10-31', items: 3, subtotal: '₹12,000', tax: '₹2,160', discount: '₹500', total: '₹13,660', status: 'Draft' },
-    { id: 'Q-2026-002', customer: 'BlueStar Ltd', date: '2026-10-05', validUntil: '2026-11-04', items: 5, subtotal: '₹38,500', tax: '₹6,930', discount: '₹0', total: '₹45,430', status: 'Sent' },
-    { id: 'Q-2026-003', customer: 'Horizon Media', date: '2026-10-08', validUntil: '2026-11-07', items: 2, subtotal: '₹8,200', tax: '₹1,476', discount: '₹200', total: '₹9,476', status: 'Accepted' },
-    { id: 'Q-2026-004', customer: 'Nexora Systems', date: '2026-10-10', validUntil: '2026-11-09', items: 7, subtotal: '₹64,000', tax: '₹11,520', discount: '₹3,000', total: '₹72,520', status: 'Sent' },
-    { id: 'Q-2026-005', customer: 'Velocity IO', date: '2026-09-20', validUntil: '2026-10-19', items: 4, subtotal: '₹22,000', tax: '₹3,960', discount: '₹1,000', total: '₹24,960', status: 'Expired' },
-    { id: 'Q-2026-006', customer: 'Orbit Finance', date: '2026-09-25', validUntil: '2026-10-24', items: 1, subtotal: '₹4,500', tax: '₹810', discount: '₹0', total: '₹5,310', status: 'Cancelled' },
-    { id: 'Q-2026-007', customer: 'GreenLeaf FMCG', date: '2026-10-15', validUntil: '2026-11-14', items: 6, subtotal: '₹51,200', tax: '₹9,216', discount: '₹2,500', total: '₹57,916', status: 'Draft' },
-    { id: 'Q-2026-008', customer: 'Starfield Tech', date: '2026-10-18', validUntil: '2026-11-17', items: 3, subtotal: '₹15,000', tax: '₹2,700', discount: '₹500', total: '₹17,200', status: 'Accepted' },
-];
+// ─── All Quotations Tab ───────────────────────────────────────────────────────
+function AllQuotationsTab({ onNavigate, setSuccessToast, setError }) {
+  const [quotations, setQuotations] = useState([]);
+  const [meta, setMeta] = useState({ total: 0, total_pages: 1, summary: {} });
+  const [loading, setLoading] = useState(true);
 
-const SAMPLE_TEMPLATES = [
-    { id: 'T-001', name: 'Enterprise SaaS Bundle', description: 'Full suite for enterprise clients', products: 'Flow + Books + Core', qty: 1, price: '₹5,297', tax: '18% GST', validity: 30, status: 'Active' },
-    { id: 'T-002', name: 'Starter Pack', description: 'Essential tools for SMBs', products: 'Flow + Books', qty: 1, price: '₹1,998', tax: '18% GST', validity: 15, status: 'Active' },
-    { id: 'T-003', name: 'HR & Payroll Bundle', description: 'People module with core HR', products: 'People', qty: 5, price: '₹4,495', tax: '18% GST', validity: 30, status: 'Active' },
-    { id: 'T-004', name: 'Inventory Starter', description: 'Warehouse and stock management', products: 'Stock', qty: 1, price: '₹999', tax: '18% GST', validity: 14, status: 'Inactive' },
-    { id: 'T-005', name: 'Project & Collaboration', description: 'Team project tracking', products: 'Projects', qty: 3, price: '₹4,497', tax: '18% GST', validity: 30, status: 'Active' },
-];
+  const [search, setSearch] = useState('');
+  const [statusFilter, setStatusFilter] = useState('all');
+  const [sortBy, setSortBy] = useState('created_at');
+  const [sortOrder, setSortOrder] = useState('desc');
+  const [currentPage, setCurrentPage] = useState(1);
+  const [pageSize, setPageSize] = useState(10);
 
-// ─── Action menu ───────────────────────────────────────────────────────────────
-function ActionMenu({ items }) {
-    const [open, setOpen] = useState(false);
-    const ref = useRef(null);
-    useEffect(() => {
-        function handler(e) { if (ref.current && !ref.current.contains(e.target)) setOpen(false); }
-        document.addEventListener('mousedown', handler);
-        return () => document.removeEventListener('mousedown', handler);
-    }, []);
-    return (
-        <div className="qp-action-root" ref={ref}>
-            <button className="qp-action-btn" onClick={() => setOpen(o => !o)} aria-label="Actions" type="button">
-                ···
-            </button>
-            {open && (
-                <ul className="qp-action-menu" role="menu">
-                    {items.map(item => (
-                        <li key={item.label} role="menuitem">
-                            <button
-                                className={`qp-action-item${item.danger ? ' danger' : ''}`}
-                                onClick={() => { item.onClick?.(); setOpen(false); }}
-                                type="button"
-                            >
-                                <QIcon name={item.icon} size={14} />
-                                {item.label}
-                            </button>
-                        </li>
-                    ))}
-                </ul>
+  // Modals state
+  const [modalMode, setModalMode] = useState(null); // 'view' | 'create' | 'edit' | 'delete'
+  const [selectedQuoteId, setSelectedQuoteId] = useState(null);
+  const [deleteTarget, setDeleteTarget] = useState(null);
+
+  const fetchQuotations = useCallback(async () => {
+    setLoading(true);
+    try {
+      const res = await quotationsApi.getQuotations({
+        search,
+        status: statusFilter,
+        sort_by: sortBy,
+        sort_order: sortOrder,
+        page: currentPage,
+        limit: pageSize
+      });
+      setQuotations(res.data || []);
+      setMeta(res.meta || { total: 0, total_pages: 1, summary: {} });
+    } catch (err) {
+      setError(err.message || 'Failed to fetch quotations from database.');
+    } finally {
+      setLoading(false);
+    }
+  }, [search, statusFilter, sortBy, sortOrder, currentPage, pageSize, setError]);
+
+  useEffect(() => {
+    fetchQuotations();
+  }, [fetchQuotations]);
+
+  async function handleSend(id) {
+    try {
+      await quotationsApi.updateStatus(id, 'sent');
+      setSuccessToast('Quotation marked as Sent.');
+      fetchQuotations();
+    } catch (err) {
+      setError(err.message || 'Failed to update quotation status.');
+    }
+  }
+
+  async function handleConvert(id) {
+    if (!confirm('Convert this quotation to an active client subscription?')) return;
+    try {
+      const res = await quotationsApi.convertToSubscription(id);
+      setSuccessToast(`Quotation converted to Subscription ${res.data.subscription_number}!`);
+      fetchQuotations();
+      if (onNavigate) onNavigate('/admin/subscriptions');
+    } catch (err) {
+      setError(err.message || 'Failed to convert quotation.');
+    }
+  }
+
+  async function handleDelete() {
+    if (!deleteTarget) return;
+    try {
+      await quotationsApi.deleteQuotation(deleteTarget.id);
+      setSuccessToast(`Quotation ${deleteTarget.quotation_number} deleted successfully.`);
+      setDeleteTarget(null);
+      setModalMode(null);
+      fetchQuotations();
+    } catch (err) {
+      setError(err.message || 'Failed to delete quotation.');
+    }
+  }
+
+  const summary = meta.summary || {};
+
+  return (
+    <>
+      {/* Metrics Row */}
+      <div className="products-metrics-grid grid-4-cols">
+        <div className="metric-card">
+          <div className="metric-label">Total Quotations</div>
+          <div className="metric-value">{summary.total_quotations ?? meta.total}</div>
+          <div className="metric-meta">Client proposals created</div>
+        </div>
+
+        <div className="metric-card">
+          <div className="metric-label">Draft Proposals</div>
+          <div className="metric-value text-muted">{summary.draft_count ?? 0}</div>
+          <div className="metric-meta">Pending sales team review</div>
+        </div>
+
+        <div className="metric-card">
+          <div className="metric-label">Sent to Clients</div>
+          <div className="metric-value text-blue">{summary.sent_count ?? 0}</div>
+          <div className="metric-meta">Active quotes awaiting acceptance</div>
+        </div>
+
+        <div className="metric-card">
+          <div className="metric-label">Accepted / Converted</div>
+          <div className="metric-value text-emerald">
+            {(parseInt(summary.accepted_count, 10) || 0) + (parseInt(summary.converted_count, 10) || 0)}
+          </div>
+          <div className="metric-meta text-emerald">Ready or converted to active contract</div>
+        </div>
+      </div>
+
+      {/* Filter Toolbar */}
+      <div className="products-filter-toolbar">
+        <div className="search-input-box">
+          <span className="search-icon"><AdminIcon name="search" size={16} /></span>
+          <input
+            type="text"
+            placeholder="Search by quotation number, customer name, business..."
+            value={search}
+            onChange={(e) => {
+              setSearch(e.target.value);
+              setCurrentPage(1);
+            }}
+            className="product-search-field"
+          />
+          {search && (
+            <button type="button" className="search-clear-btn" onClick={() => setSearch('')}>×</button>
+          )}
+        </div>
+
+        <div className="filters-row">
+          <select
+            className="filter-select"
+            value={statusFilter}
+            onChange={(e) => {
+              setStatusFilter(e.target.value);
+              setCurrentPage(1);
+            }}
+          >
+            <option value="all">All Status</option>
+            <option value="draft">Draft</option>
+            <option value="sent">Sent</option>
+            <option value="accepted">Accepted</option>
+            <option value="rejected">Rejected</option>
+            <option value="expired">Expired</option>
+            <option value="converted">Converted</option>
+          </select>
+
+          <select
+            className="filter-select"
+            value={`${sortBy}:${sortOrder}`}
+            onChange={(e) => {
+              const [field, order] = e.target.value.split(':');
+              setSortBy(field);
+              setSortOrder(order);
+            }}
+          >
+            <option value="created_at:desc">Newest Added</option>
+            <option value="created_at:asc">Oldest Added</option>
+            <option value="quotation_number:desc">Quote # (Desc)</option>
+            <option value="total_amount:desc">Amount: High to Low</option>
+            <option value="total_amount:asc">Amount: Low to High</option>
+            <option value="valid_until:asc">Expiry Soonest</option>
+          </select>
+        </div>
+      </div>
+
+      {/* Table Card */}
+      <div className="table-card">
+        {loading ? (
+          <div className="table-loading-state">
+            <div className="loading-spinner" />
+            <p>Loading quotations from Neon PostgreSQL database...</p>
+          </div>
+        ) : quotations.length === 0 ? (
+          <div className="table-empty-state">
+            <div className="empty-state-icon">
+              <AdminIcon name="quotations" size={48} />
+            </div>
+            <h3>No quotations found</h3>
+            <p>No quotation records matched your search or filter settings.</p>
+            {(search || statusFilter !== 'all') && (
+              <div className="empty-actions">
+                <button
+                  type="button"
+                  className="btn-secondary"
+                  onClick={() => {
+                    setSearch('');
+                    setStatusFilter('all');
+                  }}
+                >
+                  Clear Filters
+                </button>
+              </div>
             )}
+          </div>
+        ) : (
+          <div className="table-responsive">
+            <table className="products-data-table">
+              <thead>
+                <tr>
+                  <th>Quotation No.</th>
+                  <th>Customer</th>
+                  <th>Quotation Date</th>
+                  <th>Valid Until</th>
+                  <th style={{ textAlign: 'center' }}>Items</th>
+                  <th>Subtotal</th>
+                  <th>Tax</th>
+                  <th>Total Amount</th>
+                  <th>Status</th>
+                  <th className="text-right">Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                {quotations.map((q) => {
+                  const customerName = [q.customer_first_name, q.customer_last_name].filter(Boolean).join(' ') || q.business_name || 'Customer';
+                  return (
+                    <tr key={q.id}>
+                      <td className="product-cell-name">
+                        <span
+                          className="product-name-link font-mono font-semibold"
+                          onClick={() => {
+                            setSelectedQuoteId(q.id);
+                            setModalMode('view');
+                          }}
+                          role="button"
+                          tabIndex={0}
+                          onKeyDown={(e) => e.key === 'Enter' && setSelectedQuoteId(q.id)}
+                        >
+                          {q.quotation_number}
+                        </span>
+                      </td>
+
+                      <td>
+                        <div className="customer-avatar-name">
+                          <div className="customer-initials-badge">
+                            {(customerName[0] || 'C').toUpperCase()}
+                          </div>
+                          <div>
+                            <div className="font-semibold text-navy">{customerName}</div>
+                            {q.business_name && customerName !== q.business_name && (
+                              <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>{q.business_name}</div>
+                            )}
+                          </div>
+                        </div>
+                      </td>
+
+                      <td>{q.quotation_date}</td>
+                      <td>{q.valid_until}</td>
+                      <td style={{ textAlign: 'center' }}>{q.item_count}</td>
+                      <td>{formatCurrency(q.subtotal)}</td>
+                      <td>{formatCurrency(q.tax_amount)}</td>
+                      <td className="font-bold text-navy">{formatCurrency(q.total_amount)}</td>
+                      <td><StatusBadge status={q.status} /></td>
+
+                      <td className="text-right">
+                        <div className="table-actions">
+                          <button
+                            type="button"
+                            className="action-btn-icon"
+                            title="View quote details"
+                            onClick={() => {
+                              setSelectedQuoteId(q.id);
+                              setModalMode('view');
+                            }}
+                          >
+                            <AdminIcon name="customers" size={15} />
+                          </button>
+
+                          {q.status !== 'converted' && (
+                            <button
+                              type="button"
+                              className="action-btn-icon"
+                              title="Edit quotation"
+                              onClick={() => {
+                                setSelectedQuoteId(q.id);
+                                setModalMode('edit');
+                              }}
+                            >
+                              <AdminIcon name="edit" size={15} />
+                            </button>
+                          )}
+
+                          {q.status === 'draft' && (
+                            <button
+                              type="button"
+                              className="action-btn-icon text-blue"
+                              title="Send to customer"
+                              onClick={() => handleSend(q.id)}
+                            >
+                              <AdminIcon name="plans" size={15} />
+                            </button>
+                          )}
+
+                          {q.status === 'accepted' && (
+                            <button
+                              type="button"
+                              className="action-btn-icon text-emerald"
+                              title="Convert to Subscription"
+                              onClick={() => handleConvert(q.id)}
+                            >
+                              <AdminIcon name="subscriptions" size={15} />
+                            </button>
+                          )}
+
+                          {q.status !== 'converted' && (
+                            <button
+                              type="button"
+                              className="action-btn-icon text-danger"
+                              title="Delete quotation"
+                              onClick={() => {
+                                setDeleteTarget(q);
+                                setModalMode('delete');
+                              }}
+                            >
+                              <AdminIcon name="trash" size={15} />
+                            </button>
+                          )}
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
+
+        {/* Pagination Bar */}
+        {meta.total_pages > 1 && (
+          <div className="pagination-bar">
+            <div className="pagination-info">
+              Showing {(meta.page - 1) * meta.limit + 1} to{' '}
+              {Math.min(meta.page * meta.limit, meta.total)} of {meta.total} quotations
+            </div>
+
+            <div className="pagination-controls">
+              <button
+                type="button"
+                className="page-nav-btn"
+                disabled={currentPage === 1}
+                onClick={() => setCurrentPage((p) => p - 1)}
+              >
+                Previous
+              </button>
+
+              <div className="page-numbers">
+                {Array.from({ length: meta.total_pages }, (_, i) => i + 1).map((pageNum) => (
+                  <button
+                    key={pageNum}
+                    type="button"
+                    className={`page-num-btn ${currentPage === pageNum ? 'active' : ''}`}
+                    onClick={() => setCurrentPage(pageNum)}
+                  >
+                    {pageNum}
+                  </button>
+                ))}
+              </div>
+
+              <button
+                type="button"
+                className="page-nav-btn"
+                disabled={currentPage === meta.total_pages}
+                onClick={() => setCurrentPage((p) => p + 1)}
+              >
+                Next
+              </button>
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* View Quotation Modal */}
+      {modalMode === 'view' && selectedQuoteId && (
+        <QuotationViewModal
+          quotationId={selectedQuoteId}
+          onClose={() => setModalMode(null)}
+          onRefresh={fetchQuotations}
+          onNavigate={onNavigate}
+        />
+      )}
+
+      {/* Create / Edit Quotation Modal */}
+      {(modalMode === 'create' || modalMode === 'edit') && (
+        <QuotationFormModal
+          quotationId={modalMode === 'edit' ? selectedQuoteId : null}
+          onClose={() => setModalMode(null)}
+          onSuccess={() => {
+            setModalMode(null);
+            fetchQuotations();
+            setSuccessToast(modalMode === 'edit' ? 'Quotation updated successfully.' : 'Quotation created successfully.');
+          }}
+        />
+      )}
+
+      {/* Delete Confirmation Modal */}
+      {modalMode === 'delete' && deleteTarget && (
+        <div
+          className="admin-modal-overlay"
+          role="dialog"
+          aria-modal="true"
+          onMouseDown={(e) => e.target === e.currentTarget && setModalMode(null)}
+        >
+          <div className="admin-modal-card modal-sm">
+            <div className="modal-header">
+              <div className="modal-title-wrap">
+                <h2 className="modal-title">Delete Quotation</h2>
+              </div>
+              <button type="button" className="modal-close-btn" onClick={() => setModalMode(null)}>×</button>
+            </div>
+
+            <div className="modal-form-body">
+              <p style={{ fontSize: '0.9rem', color: 'var(--text-secondary)' }}>
+                Are you sure you want to permanently delete quotation <strong>"{deleteTarget.quotation_number}"</strong>?
+                This action cannot be undone.
+              </p>
+
+              <div className="modal-form-actions" style={{ marginTop: '20px' }}>
+                <button type="button" className="btn-secondary" onClick={() => setModalMode(null)}>
+                  Cancel
+                </button>
+                <button type="button" className="btn-danger-action" onClick={handleDelete}>
+                  Delete Quotation
+                </button>
+              </div>
+            </div>
+          </div>
         </div>
-    );
+      )}
+    </>
+  );
 }
 
-// ─── Backend notice ────────────────────────────────────────────────────────────
-function BackendNotice({ message }) {
-    return (
-        <div className="qp-backend-notice" role="status">
-            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                <circle cx="12" cy="12" r="10" /><line x1="12" y1="8" x2="12" y2="12" /><line x1="12" y1="16" x2="12.01" y2="16" />
-            </svg>
-            <span>{message}</span>
-        </div>
-    );
-}
+// ─── Quotation View Modal ─────────────────────────────────────────────────────
+function QuotationViewModal({ quotationId, onClose, onRefresh, onNavigate }) {
+  const [data, setData] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [actionLoading, setActionLoading] = useState(false);
 
-// ─── Modal shell ───────────────────────────────────────────────────────────────
-function Modal({ title, onClose, children }) {
-    useEffect(() => {
-        const handler = (e) => { if (e.key === 'Escape') onClose(); };
-        window.addEventListener('keydown', handler);
-        return () => window.removeEventListener('keydown', handler);
-    }, [onClose]);
-    return (
-        <div className="qp-modal-backdrop" role="presentation" onMouseDown={e => e.target === e.currentTarget && onClose()}>
-            <div className="qp-modal" role="dialog" aria-modal="true" aria-labelledby="qp-modal-title">
-                <div className="qp-modal-header">
-                    <h3 id="qp-modal-title" className="qp-modal-title">{title}</h3>
-                    <button className="qp-modal-close" onClick={onClose} aria-label="Close" type="button">
-                        <QIcon name="x" size={18} />
-                    </button>
-                </div>
-                <div className="qp-modal-body">{children}</div>
-            </div>
-        </div>
-    );
-}
+  useEffect(() => {
+    async function load() {
+      try {
+        setLoading(true);
+        const res = await quotationsApi.getQuotationById(quotationId);
+        setData(res.data);
+      } catch (err) {
+        alert(err.message || 'Failed to load quotation.');
+      } finally {
+        setLoading(false);
+      }
+    }
+    load();
+  }, [quotationId]);
 
-// ─── Quotation detail view ─────────────────────────────────────────────────────
-function QuotationDetailModal({ quotation, onClose }) {
-    if (!quotation) return null;
-    return (
-        <Modal title={`Quotation ${quotation.id}`} onClose={onClose}>
-            <BackendNotice message="Quotation detail view is ready. Connect the GET /api/quotations/:id endpoint to load live data." />
-            <div className="qp-detail-grid">
-                <div className="qp-detail-section">
-                    <h4 className="qp-detail-section-title">Quotation Information</h4>
-                    <dl className="qp-detail-dl">
-                        <dt>Quotation Number</dt><dd className="font-mono">{quotation.id}</dd>
-                        <dt>Customer</dt><dd>{quotation.customer}</dd>
-                        <dt>Quotation Date</dt><dd>{quotation.date}</dd>
-                        <dt>Valid Until</dt><dd>{quotation.validUntil}</dd>
-                        <dt>Status</dt><dd><StatusPill status={quotation.status} /></dd>
-                    </dl>
-                </div>
-                <div className="qp-detail-section">
-                    <h4 className="qp-detail-section-title">Pricing Summary</h4>
-                    <dl className="qp-detail-dl">
-                        <dt>Subtotal</dt><dd>{quotation.subtotal}</dd>
-                        <dt>Tax</dt><dd>{quotation.tax}</dd>
-                        <dt>Discount</dt><dd>{quotation.discount}</dd>
-                        <dt className="total-key">Total Amount</dt><dd className="total-val">{quotation.total}</dd>
-                    </dl>
-                </div>
+  async function handleStatusChange(newStatus) {
+    try {
+      setActionLoading(true);
+      await quotationsApi.updateStatus(quotationId, newStatus);
+      const res = await quotationsApi.getQuotationById(quotationId);
+      setData(res.data);
+      if (onRefresh) onRefresh();
+    } catch (err) {
+      alert(err.message);
+    } finally {
+      setActionLoading(false);
+    }
+  }
+
+  async function handleConvert() {
+    if (!confirm('Convert this quotation to an active subscription?')) return;
+    try {
+      setActionLoading(true);
+      const res = await quotationsApi.convertToSubscription(quotationId);
+      alert('Converted to Subscription ' + res.data.subscription_number + '!');
+      if (onRefresh) onRefresh();
+      if (onNavigate) onNavigate('/admin/subscriptions');
+      else onClose();
+    } catch (err) {
+      alert(err.message);
+    } finally {
+      setActionLoading(false);
+    }
+  }
+
+  return (
+    <div
+      className="admin-modal-overlay"
+      role="dialog"
+      aria-modal="true"
+      onMouseDown={(e) => e.target === e.currentTarget && onClose()}
+    >
+      <div className="admin-modal-card modal-lg">
+        <div className="modal-header">
+          <div className="modal-title-wrap">
+            <h2 className="modal-title">
+              {data ? `Quotation ${data.quotation_number}` : 'Quotation Details'}
+            </h2>
+            <span className="modal-subtitle">
+              {data ? `${data.customer_first_name} ${data.customer_last_name || ''} • Created on ${data.quotation_date}` : 'Loading...'}
+            </span>
+          </div>
+          <button type="button" className="modal-close-btn" onClick={onClose}>×</button>
+        </div>
+
+        <div className="modal-form-body">
+          {loading || !data ? (
+            <div className="table-loading-state">
+              <div className="loading-spinner" />
+              <p>Loading quotation details...</p>
             </div>
-            <div className="qp-detail-section">
-                <h4 className="qp-detail-section-title">Quotation Items</h4>
-                <BackendNotice message="Connect GET /api/quotations/:id/items to load line items." />
-                <div className="qp-placeholder-block">Line items will load from the backend API.</div>
-            </div>
-            <div className="qp-modal-footer">
-                <button className="qp-btn qp-btn-ghost" onClick={onClose} type="button">Close</button>
-                {quotation.status === 'Accepted' && (
-                    <button className="qp-btn qp-btn-primary" type="button">
-                        <QIcon name="convert" size={14} /> Convert to Subscription
-                    </button>
+          ) : (
+            <>
+              <div className="admin-detail-grid">
+                <div className="detail-field-group">
+                  <label>Quotation Number</label>
+                  <p className="font-mono font-bold text-navy">{data.quotation_number}</p>
+                </div>
+
+                <div className="detail-field-group">
+                  <label>Status</label>
+                  <p><StatusBadge status={data.status} /></p>
+                </div>
+
+                <div className="detail-field-group">
+                  <label>Valid Until</label>
+                  <p className="font-semibold">{data.valid_until}</p>
+                </div>
+
+                <div className="detail-field-group">
+                  <label>Payment Terms</label>
+                  <p>{data.payment_terms || 'Net 30'}</p>
+                </div>
+
+                <div className="detail-field-group">
+                  <label>Subtotal</label>
+                  <p>{formatCurrency(data.subtotal)}</p>
+                </div>
+
+                <div className="detail-field-group">
+                  <label>Tax Amount</label>
+                  <p>+{formatCurrency(data.tax_amount)}</p>
+                </div>
+
+                <div className="detail-field-group">
+                  <label>Discount</label>
+                  <p className="text-danger">-{formatCurrency(data.discount_amount)}</p>
+                </div>
+
+                <div className="detail-field-group">
+                  <label>Total Amount</label>
+                  <p className="font-bold text-navy" style={{ fontSize: '1.2rem', color: 'var(--color-primary)' }}>
+                    {formatCurrency(data.total_amount)}
+                  </p>
+                </div>
+              </div>
+
+              {/* Line Items */}
+              <div style={{ marginTop: '20px' }}>
+                <h4 style={{ fontSize: '0.9rem', fontWeight: 700, marginBottom: '8px' }}>
+                  Line Items ({data.items?.length || 0})
+                </h4>
+                <div className="table-responsive" style={{ border: '1px solid var(--admin-border-subtle)', borderRadius: '6px' }}>
+                  <table className="products-data-table" style={{ fontSize: '0.85rem' }}>
+                    <thead>
+                      <tr>
+                        <th>Product</th>
+                        <th>Cycle</th>
+                        <th style={{ textAlign: 'center' }}>Qty</th>
+                        <th>Unit Price</th>
+                        <th>Tax</th>
+                        <th>Discount</th>
+                        <th className="text-right">Total</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {data.items?.map((it) => (
+                        <tr key={it.id}>
+                          <td className="font-semibold">{it.product_name}</td>
+                          <td className="capitalize">{it.billing_frequency || 'monthly'}</td>
+                          <td style={{ textAlign: 'center' }}>{it.quantity}</td>
+                          <td>{formatCurrency(it.unit_price)}</td>
+                          <td>{it.tax_rate}%</td>
+                          <td>{formatCurrency(it.discount_amount)}</td>
+                          <td className="text-right font-semibold">{formatCurrency(it.total_amount)}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+
+              {(data.customer_notes || data.internal_notes) && (
+                <div style={{ marginTop: '16px', display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
+                  {data.customer_notes && (
+                    <div style={{ padding: '10px 14px', background: 'var(--admin-bg-subtle)', borderRadius: '6px' }}>
+                      <label style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-muted)' }}>Customer Notes</label>
+                      <p style={{ margin: '4px 0 0', fontSize: '0.85rem' }}>{data.customer_notes}</p>
+                    </div>
+                  )}
+                  {data.internal_notes && (
+                    <div style={{ padding: '10px 14px', background: 'var(--admin-bg-subtle)', borderRadius: '6px' }}>
+                      <label style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-muted)' }}>Internal Notes</label>
+                      <p style={{ margin: '4px 0 0', fontSize: '0.85rem' }}>{data.internal_notes}</p>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              <div className="modal-form-actions" style={{ marginTop: '24px' }}>
+                <button type="button" className="btn-secondary" onClick={onClose}>Close</button>
+
+                {data.status === 'draft' && (
+                  <button
+                    type="button"
+                    className="btn-primary-action"
+                    disabled={actionLoading}
+                    onClick={() => handleStatusChange('sent')}
+                  >
+                    Mark as Sent
+                  </button>
                 )}
+
+                {data.status === 'sent' && (
+                  <button
+                    type="button"
+                    className="btn-primary-action"
+                    disabled={actionLoading}
+                    onClick={() => handleStatusChange('accepted')}
+                  >
+                    Mark as Accepted
+                  </button>
+                )}
+
+                {data.status === 'accepted' && (
+                  <button
+                    type="button"
+                    className="btn-primary-action"
+                    disabled={actionLoading}
+                    onClick={handleConvert}
+                  >
+                    Convert to Subscription
+                  </button>
+                )}
+              </div>
+            </>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ─── Quotation Form Modal (Create / Edit) ─────────────────────────────────────
+function QuotationFormModal({ quotationId, onClose, onSuccess }) {
+  const [customers, setCustomers] = useState([]);
+  const [products, setProducts] = useState([]);
+  const [templates, setTemplates] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState(null);
+
+  const [customerId, setCustomerId] = useState('');
+  const [quotationDate, setQuotationDate] = useState(new Date().toISOString().split('T')[0]);
+  const [validUntil, setValidUntil] = useState(() => {
+    const d = new Date();
+    d.setDate(d.getDate() + 30);
+    return d.toISOString().split('T')[0];
+  });
+  const [paymentTerms, setPaymentTerms] = useState('Net 30');
+  const [customerNotes, setCustomerNotes] = useState('');
+  const [internalNotes, setInternalNotes] = useState('');
+  const [items, setItems] = useState([]);
+
+  useEffect(() => {
+    async function init() {
+      try {
+        setLoading(true);
+        const [custRes, prodRes, tmplRes] = await Promise.all([
+          peopleApi.getCustomers({ limit: 100 }),
+          fetch('http://localhost:5000/api/products?limit=100').then((r) => r.json()).catch(() => ({ data: [] })),
+          quotationTemplatesApi.getTemplates({ limit: 100 })
+        ]);
+
+        setCustomers(custRes.data || []);
+        setProducts(prodRes.data || []);
+        setTemplates(tmplRes.data || []);
+
+        if (quotationId) {
+          const res = await quotationsApi.getQuotationById(quotationId);
+          const q = res.data;
+          setCustomerId(q.customer_id);
+          setQuotationDate(q.quotation_date);
+          setValidUntil(q.valid_until);
+          setPaymentTerms(q.payment_terms || 'Net 30');
+          setCustomerNotes(q.customer_notes || '');
+          setInternalNotes(q.internal_notes || '');
+          setItems(q.items || []);
+        } else {
+          if (prodRes.data && prodRes.data.length > 0) {
+            const p0 = prodRes.data[0];
+            setItems([{
+              product_id: p0.id,
+              product_name: p0.name,
+              billing_frequency: 'monthly',
+              quantity: 1,
+              unit_price: p0.sales_price || 0,
+              tax_rate: 18,
+              discount_type: 'fixed',
+              discount_value: 0
+            }]);
+          }
+        }
+      } catch (err) {
+        setError(err.message || 'Failed to load options.');
+      } finally {
+        setLoading(false);
+      }
+    }
+    init();
+  }, [quotationId]);
+
+  function handleProductChange(idx, prodId) {
+    const p = products.find((x) => x.id === prodId);
+    if (!p) return;
+    const newItems = [...items];
+    newItems[idx] = {
+      ...newItems[idx],
+      product_id: p.id,
+      product_name: p.name,
+      unit_price: p.sales_price || 0
+    };
+    setItems(newItems);
+  }
+
+  function handleItemChange(idx, field, val) {
+    const newItems = [...items];
+    newItems[idx] = { ...newItems[idx], [field]: val };
+    setItems(newItems);
+  }
+
+  function addItem() {
+    const p0 = products[0] || {};
+    setItems([...items, {
+      product_id: p0.id || null,
+      product_name: p0.name || 'Product',
+      billing_frequency: 'monthly',
+      quantity: 1,
+      unit_price: p0.sales_price || 0,
+      tax_rate: 18,
+      discount_type: 'fixed',
+      discount_value: 0
+    }]);
+  }
+
+  function removeItem(idx) {
+    if (items.length <= 1) return;
+    setItems(items.filter((_, i) => i !== idx));
+  }
+
+  const calculatedSubtotal = items.reduce((sum, it) => sum + (parseFloat(it.quantity) || 0) * (parseFloat(it.unit_price) || 0), 0);
+  const calculatedDiscount = items.reduce((sum, it) => {
+    const base = (parseFloat(it.quantity) || 0) * (parseFloat(it.unit_price) || 0);
+    const dVal = parseFloat(it.discount_value) || 0;
+    return sum + (it.discount_type === 'percentage' ? (base * Math.min(100, dVal)) / 100 : Math.min(base, dVal));
+  }, 0);
+  const calculatedTax = items.reduce((sum, it) => {
+    const base = (parseFloat(it.quantity) || 0) * (parseFloat(it.unit_price) || 0);
+    const dVal = parseFloat(it.discount_value) || 0;
+    const disc = it.discount_type === 'percentage' ? (base * Math.min(100, dVal)) / 100 : Math.min(base, dVal);
+    const rate = parseFloat(it.tax_rate) || 0;
+    return sum + ((Math.max(0, base - disc) * rate) / 100);
+  }, 0);
+  const calculatedTotal = Math.max(0, calculatedSubtotal - calculatedDiscount + calculatedTax);
+
+  async function handleSubmit(e) {
+    e.preventDefault();
+    setError(null);
+    if (!customerId) {
+      setError('Please select a customer.');
+      return;
+    }
+    if (items.length === 0) {
+      setError('Please add at least one line item.');
+      return;
+    }
+
+    try {
+      setSaving(true);
+      const payload = {
+        customer_id: customerId,
+        quotation_date: quotationDate,
+        valid_until: validUntil,
+        payment_terms: paymentTerms,
+        customer_notes: customerNotes,
+        internal_notes: internalNotes,
+        items
+      };
+
+      if (quotationId) {
+        await quotationsApi.updateQuotation(quotationId, payload);
+      } else {
+        await quotationsApi.createQuotation(payload);
+      }
+      onSuccess();
+    } catch (err) {
+      setError(err.message || 'Failed to save quotation.');
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <div
+      className="admin-modal-overlay"
+      role="dialog"
+      aria-modal="true"
+      onMouseDown={(e) => e.target === e.currentTarget && onClose()}
+    >
+      <div className="admin-modal-card modal-lg">
+        <div className="modal-header">
+          <div className="modal-title-wrap">
+            <h2 className="modal-title">{quotationId ? 'Edit Quotation' : 'Create Quotation'}</h2>
+            <span className="modal-subtitle">Generate custom sales proposals with live pricing and GST taxes.</span>
+          </div>
+          <button type="button" className="modal-close-btn" onClick={onClose}>×</button>
+        </div>
+
+        {error && (
+          <div className="product-alert alert-error" style={{ margin: '16px 24px 0' }}>
+            <span className="alert-icon">⚠️</span>
+            <span className="alert-message">{error}</span>
+          </div>
+        )}
+
+        <form onSubmit={handleSubmit} className="modal-form-body">
+          <div className="form-grid-2col">
+            <div className="form-group required">
+              <label htmlFor="quote-customer">Customer</label>
+              <select
+                id="quote-customer"
+                required
+                value={customerId}
+                onChange={(e) => setCustomerId(e.target.value)}
+              >
+                <option value="">Select customer...</option>
+                {customers.map((c) => {
+                  const name = [c.first_name, c.last_name].filter(Boolean).join(' ') || c.business_name;
+                  return (
+                    <option key={c.id} value={c.id}>
+                      {name} {c.business_name && name !== c.business_name ? `(${c.business_name})` : ''} — {c.email}
+                    </option>
+                  );
+                })}
+              </select>
             </div>
-        </Modal>
-    );
-}
 
-// ─── Create / Edit Quotation modal ────────────────────────────────────────────
-function QuotationFormModal({ quotation, onClose }) {
-    return (
-        <Modal title={quotation ? `Edit Quotation ${quotation.id}` : 'Create Quotation'} onClose={onClose}>
-            <BackendNotice message={quotation ? 'Connect PUT /api/quotations/:id to save edits.' : 'Connect POST /api/quotations to create a new quotation.'} />
-            <form className="qp-form" onSubmit={e => e.preventDefault()}>
-                <div className="qp-form-row">
-                    <div className="qp-field">
-                        <label htmlFor="qf-customer">Customer</label>
-                        <input id="qf-customer" type="text" placeholder="Search or select customer…" defaultValue={quotation?.customer || ''} />
-                    </div>
-                    <div className="qp-field">
-                        <label htmlFor="qf-valid">Valid Until</label>
-                        <input id="qf-valid" type="date" defaultValue={quotation?.validUntil || ''} />
-                    </div>
-                </div>
-                <div className="qp-field">
-                    <label>Quotation Items</label>
-                    <BackendNotice message="Load products from GET /api/products to populate the item selector." />
-                    <div className="qp-placeholder-block">Item rows will be editable once product API is connected.</div>
-                </div>
-                <div className="qp-form-row">
-                    <div className="qp-field">
-                        <label htmlFor="qf-discount">Discount</label>
-                        <input id="qf-discount" type="text" placeholder="₹ 0.00" defaultValue={quotation?.discount || ''} />
-                    </div>
-                    <div className="qp-field">
-                        <label htmlFor="qf-notes">Notes</label>
-                        <input id="qf-notes" type="text" placeholder="Optional internal notes" />
-                    </div>
-                </div>
-                <div className="qp-modal-footer">
-                    <button className="qp-btn qp-btn-ghost" onClick={onClose} type="button">Cancel</button>
-                    <button className="qp-btn qp-btn-primary" type="submit">
-                        {quotation ? 'Save Changes' : 'Create Quotation'}
-                    </button>
-                </div>
-            </form>
-        </Modal>
-    );
-}
-
-// ─── Template form modal ───────────────────────────────────────────────────────
-function TemplateFormModal({ template, onClose }) {
-    return (
-        <Modal title={template ? `Edit Template — ${template.name}` : 'Create Quotation Template'} onClose={onClose}>
-            <BackendNotice message={template ? 'Connect PUT /api/quotation-templates/:id to save.' : 'Connect POST /api/quotation-templates to create.'} />
-            <form className="qp-form" onSubmit={e => e.preventDefault()}>
-                <div className="qp-field">
-                    <label htmlFor="tf-name">Template Name</label>
-                    <input id="tf-name" type="text" placeholder="e.g. Enterprise SaaS Bundle" defaultValue={template?.name || ''} />
-                </div>
-                <div className="qp-field">
-                    <label htmlFor="tf-desc">Description</label>
-                    <input id="tf-desc" type="text" placeholder="Brief description of this template" defaultValue={template?.description || ''} />
-                </div>
-                <div className="qp-form-row">
-                    <div className="qp-field">
-                        <label htmlFor="tf-validity">Validity Period (days)</label>
-                        <input id="tf-validity" type="number" min="1" placeholder="30" defaultValue={template?.validity || ''} />
-                    </div>
-                    <div className="qp-field">
-                        <label htmlFor="tf-tax">Applicable Tax</label>
-                        <input id="tf-tax" type="text" placeholder="e.g. 18% GST" defaultValue={template?.tax || ''} />
-                    </div>
-                </div>
-                <div className="qp-field">
-                    <label>Products & Plans</label>
-                    <BackendNotice message="Load products from GET /api/products and plans from GET /api/subscription-plans." />
-                    <div className="qp-placeholder-block">Product/plan line items will be configurable once APIs are connected.</div>
-                </div>
-                <div className="qp-modal-footer">
-                    <button className="qp-btn qp-btn-ghost" onClick={onClose} type="button">Cancel</button>
-                    <button className="qp-btn qp-btn-primary" type="submit">
-                        {template ? 'Save Changes' : 'Create Template'}
-                    </button>
-                </div>
-            </form>
-        </Modal>
-    );
-}
-
-// ─── Confirm delete modal ──────────────────────────────────────────────────────
-function DeleteModal({ entityLabel, onClose }) {
-    return (
-        <Modal title="Confirm Delete" onClose={onClose}>
-            <BackendNotice message={`Connect DELETE /api/${entityLabel.toLowerCase().replace(/\s/g, '-')}s/:id to enable deletion.`} />
-            <p className="qp-delete-text">This action cannot be undone. Are you sure you want to delete this {entityLabel.toLowerCase()}?</p>
-            <div className="qp-modal-footer">
-                <button className="qp-btn qp-btn-ghost" onClick={onClose} type="button">Cancel</button>
-                <button className="qp-btn qp-btn-danger" type="button" onClick={onClose}>Delete</button>
+            <div className="form-group">
+              <label htmlFor="quote-terms">Payment Terms</label>
+              <select
+                id="quote-terms"
+                value={paymentTerms}
+                onChange={(e) => setPaymentTerms(e.target.value)}
+              >
+                <option value="Net 30">Net 30</option>
+                <option value="Net 15">Net 15</option>
+                <option value="Advance">Advance</option>
+                <option value="Due on Receipt">Due on Receipt</option>
+              </select>
             </div>
-        </Modal>
-    );
-}
+          </div>
 
-// ─── All Quotations tab ───────────────────────────────────────────────────────
-function AllQuotationsTab() {
-    const [search, setSearch] = useState('');
-    const [statusFilter, setStatusFilter] = useState('All');
-    const [page, setPage] = useState(1);
-    const [modal, setModal] = useState(null); // { type, data }
-    const PER_PAGE = 5;
+          <div className="form-grid-2col">
+            <div className="form-group required">
+              <label htmlFor="quote-date">Quotation Date</label>
+              <input
+                id="quote-date"
+                type="date"
+                required
+                value={quotationDate}
+                onChange={(e) => setQuotationDate(e.target.value)}
+              />
+            </div>
+            <div className="form-group required">
+              <label htmlFor="quote-valid">Valid Until</label>
+              <input
+                id="quote-valid"
+                type="date"
+                required
+                min={quotationDate}
+                value={validUntil}
+                onChange={(e) => setValidUntil(e.target.value)}
+              />
+            </div>
+          </div>
 
-    const statuses = ['All', 'Draft', 'Sent', 'Accepted', 'Expired', 'Cancelled'];
+          {/* Line Items */}
+          <div style={{ marginTop: '16px' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+              <label style={{ fontWeight: 700, fontSize: '0.85rem' }}>Line Items</label>
+              <button type="button" className="btn-secondary" style={{ padding: '4px 10px', fontSize: '0.8rem' }} onClick={addItem}>
+                + Add Item
+              </button>
+            </div>
 
-    const filtered = SAMPLE_QUOTATIONS.filter(q => {
-        const matchSearch = q.id.toLowerCase().includes(search.toLowerCase()) ||
-            q.customer.toLowerCase().includes(search.toLowerCase());
-        const matchStatus = statusFilter === 'All' || q.status === statusFilter;
-        return matchSearch && matchStatus;
-    });
-
-    const totalPages = Math.max(1, Math.ceil(filtered.length / PER_PAGE));
-    const paged = filtered.slice((page - 1) * PER_PAGE, page * PER_PAGE);
-
-    function openModal(type, data = null) { setModal({ type, data }); }
-    function closeModal() { setModal(null); }
-
-    return (
-        <div className="qp-tab-content">
-            <BackendNotice message="All quotations data is static for UI demonstration. Connect GET /api/quotations to load live records." />
-
-            {/* Toolbar */}
-            <div className="qp-toolbar">
-                <div className="qp-toolbar-left">
-                    <div className="qp-search-wrap">
-                        <QIcon name="search" size={15} />
+            <div className="table-responsive" style={{ border: '1px solid var(--admin-border-subtle)', borderRadius: '6px' }}>
+              <table className="products-data-table" style={{ fontSize: '0.82rem' }}>
+                <thead>
+                  <tr>
+                    <th>Product</th>
+                    <th style={{ width: '80px' }}>Qty</th>
+                    <th style={{ width: '110px' }}>Price (₹)</th>
+                    <th style={{ width: '75px' }}>Tax (%)</th>
+                    <th style={{ width: '90px' }}>Disc Value</th>
+                    <th style={{ width: '90px' }}>Disc Type</th>
+                    <th style={{ width: '35px' }}></th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {items.map((it, idx) => (
+                    <tr key={idx}>
+                      <td>
+                        <select
+                          value={it.product_id || ''}
+                          onChange={(e) => handleProductChange(idx, e.target.value)}
+                          style={{ width: '100%', padding: '4px', fontSize: '0.8rem' }}
+                        >
+                          <option value="">Select product...</option>
+                          {products.map((p) => (
+                            <option key={p.id} value={p.id}>{p.name} (₹{p.sales_price})</option>
+                          ))}
+                        </select>
+                      </td>
+                      <td>
                         <input
-                            id="quotations-search"
-                            className="qp-search-input"
-                            type="search"
-                            placeholder="Search by ID or customer…"
-                            value={search}
-                            onChange={e => { setSearch(e.target.value); setPage(1); }}
-                            aria-label="Search quotations"
+                          type="number"
+                          min="1"
+                          value={it.quantity}
+                          onChange={(e) => handleItemChange(idx, 'quantity', e.target.value)}
+                          style={{ width: '100%', padding: '4px', fontSize: '0.8rem' }}
                         />
-                    </div>
-                    <div className="qp-filter-tabs" role="tablist" aria-label="Filter by status">
-                        {statuses.map(s => (
-                            <button
-                                key={s}
-                                role="tab"
-                                aria-selected={statusFilter === s}
-                                className={`qp-filter-tab${statusFilter === s ? ' active' : ''}`}
-                                onClick={() => { setStatusFilter(s); setPage(1); }}
-                                type="button"
-                            >
-                                {s}
-                            </button>
-                        ))}
-                    </div>
-                </div>
-                <button
-                    id="create-quotation-btn"
-                    className="qp-btn qp-btn-primary"
-                    type="button"
-                    onClick={() => openModal('create')}
-                >
-                    <QIcon name="plus" size={15} /> Create Quotation
-                </button>
-            </div>
-
-            {/* Table */}
-            <div className="qp-table-wrap">
-                <table className="qp-table" aria-label="Quotations list">
-                    <thead>
-                        <tr>
-                            <th>Quotation No.</th>
-                            <th>Customer</th>
-                            <th>Date</th>
-                            <th>Valid Until</th>
-                            <th style={{ textAlign: 'center' }}>Items</th>
-                            <th>Subtotal</th>
-                            <th>Tax</th>
-                            <th>Discount</th>
-                            <th>Total</th>
-                            <th>Status</th>
-                            <th style={{ textAlign: 'center' }}>Actions</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        {paged.length === 0 ? (
-                            <tr>
-                                <td colSpan={11} className="qp-empty-row">No quotations match your search.</td>
-                            </tr>
-                        ) : paged.map(q => (
-                            <tr key={q.id}>
-                                <td><span className="font-mono qp-id-link" onClick={() => openModal('view', q)} role="button" tabIndex={0} onKeyDown={e => e.key === 'Enter' && openModal('view', q)}>{q.id}</span></td>
-                                <td className="qp-customer-cell">{q.customer}</td>
-                                <td>{q.date}</td>
-                                <td>{q.validUntil}</td>
-                                <td style={{ textAlign: 'center' }}>{q.items}</td>
-                                <td>{q.subtotal}</td>
-                                <td>{q.tax}</td>
-                                <td>{q.discount}</td>
-                                <td className="qp-total-cell">{q.total}</td>
-                                <td><StatusPill status={q.status} /></td>
-                                <td style={{ textAlign: 'center' }}>
-                                    <ActionMenu items={[
-                                        { label: 'View', icon: 'eye', onClick: () => openModal('view', q) },
-                                        { label: 'Edit', icon: 'edit', onClick: () => openModal('edit', q) },
-                                        { label: 'Download PDF', icon: 'download', onClick: () => { } },
-                                        { label: 'Send to Customer', icon: 'send', onClick: () => { } },
-                                        ...(q.status === 'Accepted' ? [{ label: 'Convert to Subscription', icon: 'convert', onClick: () => { } }] : []),
-                                        { label: 'Delete', icon: 'trash', danger: true, onClick: () => openModal('delete', q) },
-                                    ]} />
-                                </td>
-                            </tr>
-                        ))}
-                    </tbody>
-                </table>
-            </div>
-
-            {/* Pagination */}
-            {totalPages > 1 && (
-                <div className="qp-pagination" aria-label="Pagination">
-                    <span className="qp-page-info">{filtered.length} record{filtered.length !== 1 ? 's' : ''}</span>
-                    <div className="qp-page-controls">
-                        <button className="qp-page-btn" disabled={page === 1} onClick={() => setPage(p => p - 1)} aria-label="Previous page" type="button">
-                            <QIcon name="chevLeft" size={14} />
-                        </button>
-                        {Array.from({ length: totalPages }, (_, i) => i + 1).map(n => (
-                            <button
-                                key={n}
-                                className={`qp-page-btn${n === page ? ' active' : ''}`}
-                                onClick={() => setPage(n)}
-                                aria-current={n === page ? 'page' : undefined}
-                                type="button"
-                            >
-                                {n}
-                            </button>
-                        ))}
-                        <button className="qp-page-btn" disabled={page === totalPages} onClick={() => setPage(p => p + 1)} aria-label="Next page" type="button">
-                            <QIcon name="chevRight" size={14} />
-                        </button>
-                    </div>
-                </div>
-            )}
-
-            {/* Modals */}
-            {modal?.type === 'view' && <QuotationDetailModal quotation={modal.data} onClose={closeModal} />}
-            {modal?.type === 'create' && <QuotationFormModal quotation={null} onClose={closeModal} />}
-            {modal?.type === 'edit' && <QuotationFormModal quotation={modal.data} onClose={closeModal} />}
-            {modal?.type === 'delete' && <DeleteModal entityLabel="Quotation" onClose={closeModal} />}
-        </div>
-    );
-}
-
-// ─── Quotation templates tab ──────────────────────────────────────────────────
-function TemplatesTab() {
-    const [search, setSearch] = useState('');
-    const [modal, setModal] = useState(null);
-
-    const filtered = SAMPLE_TEMPLATES.filter(t =>
-        t.name.toLowerCase().includes(search.toLowerCase()) ||
-        t.description.toLowerCase().includes(search.toLowerCase())
-    );
-
-    function openModal(type, data = null) { setModal({ type, data }); }
-    function closeModal() { setModal(null); }
-
-    return (
-        <div className="qp-tab-content">
-            <BackendNotice message="Quotation templates data is static for UI demonstration. Connect GET /api/quotation-templates to load live records." />
-
-            <div className="qp-toolbar">
-                <div className="qp-toolbar-left">
-                    <div className="qp-search-wrap">
-                        <QIcon name="search" size={15} />
+                      </td>
+                      <td>
                         <input
-                            id="templates-search"
-                            className="qp-search-input"
-                            type="search"
-                            placeholder="Search templates…"
-                            value={search}
-                            onChange={e => setSearch(e.target.value)}
-                            aria-label="Search templates"
+                          type="number"
+                          step="0.01"
+                          min="0"
+                          value={it.unit_price}
+                          onChange={(e) => handleItemChange(idx, 'unit_price', e.target.value)}
+                          style={{ width: '100%', padding: '4px', fontSize: '0.8rem' }}
                         />
-                    </div>
-                </div>
-                <button
-                    id="create-template-btn"
-                    className="qp-btn qp-btn-primary"
-                    type="button"
-                    onClick={() => openModal('create')}
-                >
-                    <QIcon name="plus" size={15} /> Create Template
-                </button>
+                      </td>
+                      <td>
+                        <input
+                          type="number"
+                          min="0"
+                          max="100"
+                          value={it.tax_rate}
+                          onChange={(e) => handleItemChange(idx, 'tax_rate', e.target.value)}
+                          style={{ width: '100%', padding: '4px', fontSize: '0.8rem' }}
+                        />
+                      </td>
+                      <td>
+                        <input
+                          type="number"
+                          step="0.01"
+                          min="0"
+                          value={it.discount_value}
+                          onChange={(e) => handleItemChange(idx, 'discount_value', e.target.value)}
+                          style={{ width: '100%', padding: '4px', fontSize: '0.8rem' }}
+                        />
+                      </td>
+                      <td>
+                        <select
+                          value={it.discount_type || 'fixed'}
+                          onChange={(e) => handleItemChange(idx, 'discount_type', e.target.value)}
+                          style={{ width: '100%', padding: '4px', fontSize: '0.8rem' }}
+                        >
+                          <option value="fixed">Fixed</option>
+                          <option value="percentage">%</option>
+                        </select>
+                      </td>
+                      <td>
+                        <button
+                          type="button"
+                          onClick={() => removeItem(idx)}
+                          disabled={items.length <= 1}
+                          style={{ background: 'none', border: 'none', color: 'var(--color-danger)', cursor: 'pointer' }}
+                        >
+                          ✕
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
             </div>
+          </div>
 
-            <div className="qp-table-wrap">
-                <table className="qp-table" aria-label="Quotation templates list">
-                    <thead>
-                        <tr>
-                            <th>Template Name</th>
-                            <th>Description</th>
-                            <th>Products & Plans</th>
-                            <th style={{ textAlign: 'center' }}>Default Qty</th>
-                            <th>Unit Price</th>
-                            <th>Tax</th>
-                            <th style={{ textAlign: 'center' }}>Validity (days)</th>
-                            <th>Status</th>
-                            <th style={{ textAlign: 'center' }}>Actions</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        {filtered.length === 0 ? (
-                            <tr>
-                                <td colSpan={9} className="qp-empty-row">No templates match your search.</td>
-                            </tr>
-                        ) : filtered.map(t => (
-                            <tr key={t.id}>
-                                <td>
-                                    <span className="qp-template-name">{t.name}</span>
-                                    <span className="qp-template-id font-mono">{t.id}</span>
-                                </td>
-                                <td className="qp-desc-cell">{t.description}</td>
-                                <td>{t.products}</td>
-                                <td style={{ textAlign: 'center' }}>{t.qty}</td>
-                                <td>{t.price}</td>
-                                <td>{t.tax}</td>
-                                <td style={{ textAlign: 'center' }}>{t.validity}</td>
-                                <td><StatusPill status={t.status} /></td>
-                                <td style={{ textAlign: 'center' }}>
-                                    <ActionMenu items={[
-                                        { label: 'View', icon: 'eye', onClick: () => openModal('view', t) },
-                                        { label: 'Edit', icon: 'edit', onClick: () => openModal('edit', t) },
-                                        { label: 'Duplicate', icon: 'copy', onClick: () => { } },
-                                        { label: t.status === 'Active' ? 'Deactivate' : 'Activate', icon: t.status === 'Active' ? 'toggleOff' : 'toggle', onClick: () => { } },
-                                        { label: 'Delete', icon: 'trash', danger: true, onClick: () => openModal('delete', t) },
-                                    ]} />
-                                </td>
-                            </tr>
-                        ))}
-                    </tbody>
-                </table>
+          {/* Pricing Totals Box */}
+          <div style={{
+            background: 'var(--admin-bg-subtle)',
+            borderRadius: '6px',
+            padding: '12px 16px',
+            marginTop: '12px',
+            display: 'flex',
+            justifyContent: 'flex-end',
+            gap: '20px',
+            fontSize: '0.85rem'
+          }}>
+            <div>Subtotal: <strong>{formatCurrency(calculatedSubtotal)}</strong></div>
+            <div>Discount: <strong className="text-danger">-{formatCurrency(calculatedDiscount)}</strong></div>
+            <div>Tax (GST): <strong>+{formatCurrency(calculatedTax)}</strong></div>
+            <div style={{ fontSize: '1rem', color: 'var(--admin-blue)', fontWeight: 700 }}>
+              Total: {formatCurrency(calculatedTotal)}
             </div>
+          </div>
 
-            {modal?.type === 'view' && <TemplateFormModal template={modal.data} onClose={closeModal} />}
-            {modal?.type === 'create' && <TemplateFormModal template={null} onClose={closeModal} />}
-            {modal?.type === 'edit' && <TemplateFormModal template={modal.data} onClose={closeModal} />}
-            {modal?.type === 'delete' && <DeleteModal entityLabel="Template" onClose={closeModal} />}
-        </div>
-    );
+          <div className="form-grid-2col" style={{ marginTop: '12px' }}>
+            <div className="form-group">
+              <label htmlFor="quote-cnotes">Customer Notes</label>
+              <textarea
+                id="quote-cnotes"
+                rows={2}
+                placeholder="Included on client proposal PDF..."
+                value={customerNotes}
+                onChange={(e) => setCustomerNotes(e.target.value)}
+              />
+            </div>
+            <div className="form-group">
+              <label htmlFor="quote-inotes">Internal Notes</label>
+              <textarea
+                id="quote-inotes"
+                rows={2}
+                placeholder="Internal sales guidance..."
+                value={internalNotes}
+                onChange={(e) => setInternalNotes(e.target.value)}
+              />
+            </div>
+          </div>
+
+          <div className="modal-form-actions" style={{ marginTop: '20px' }}>
+            <button type="button" className="btn-secondary" onClick={onClose} disabled={saving}>
+              Cancel
+            </button>
+            <button type="submit" className="btn-primary-action" disabled={saving}>
+              {saving ? 'Saving...' : (quotationId ? 'Save Changes' : 'Create Quotation')}
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  );
 }
 
-// ─── Main Page ─────────────────────────────────────────────────────────────────
-export function QuotationsPage() {
-    const [activeTab, setActiveTab] = useState('quotations');
+// ─── Quotation Templates Tab ──────────────────────────────────────────────────
+function TemplatesTab({ setSuccessToast, setError }) {
+  const [templates, setTemplates] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [search, setSearch] = useState('');
+  const [modalMode, setModalMode] = useState(null); // 'create' | 'edit' | 'delete'
+  const [selectedTemplate, setSelectedTemplate] = useState(null);
+  const [deleteTarget, setDeleteTarget] = useState(null);
 
-    return (
-        <div className="qp-page" id="quotations-page">
-            {/* Page tabs */}
-            <div className="qp-tabs-bar" role="tablist" aria-label="Quotations sections">
-                <button
-                    id="tab-all-quotations"
-                    role="tab"
-                    aria-selected={activeTab === 'quotations'}
-                    className={`qp-tab${activeTab === 'quotations' ? ' active' : ''}`}
-                    onClick={() => setActiveTab('quotations')}
-                    type="button"
-                >
-                    <AdminIcon name="quotations" size={16} />
-                    All Quotations
-                    <span className="qp-tab-count">{SAMPLE_QUOTATIONS.length}</span>
-                </button>
-                <button
-                    id="tab-templates"
-                    role="tab"
-                    aria-selected={activeTab === 'templates'}
-                    className={`qp-tab${activeTab === 'templates' ? ' active' : ''}`}
-                    onClick={() => setActiveTab('templates')}
-                    type="button"
-                >
-                    <AdminIcon name="quotationTemplates" size={16} />
-                    Quotation Templates
-                    <span className="qp-tab-count">{SAMPLE_TEMPLATES.length}</span>
-                </button>
-            </div>
+  const fetchTemplates = useCallback(async () => {
+    try {
+      setLoading(true);
+      const res = await quotationTemplatesApi.getTemplates({ search });
+      setTemplates(res.data || []);
+    } catch (err) {
+      setError(err.message || 'Failed to load templates.');
+    } finally {
+      setLoading(false);
+    }
+  }, [search, setError]);
 
-            {/* Tab panels */}
-            <div role="tabpanel" aria-labelledby={`tab-${activeTab}`}>
-                {activeTab === 'quotations' ? <AllQuotationsTab /> : <TemplatesTab />}
-            </div>
+  useEffect(() => {
+    fetchTemplates();
+  }, [fetchTemplates]);
+
+  async function handleToggleStatus(tmpl) {
+    try {
+      await quotationTemplatesApi.toggleStatus(tmpl.id, !tmpl.is_active);
+      setSuccessToast(`Template "${tmpl.template_name}" status updated.`);
+      fetchTemplates();
+    } catch (err) {
+      setError(err.message || 'Failed to toggle status.');
+    }
+  }
+
+  async function handleDelete() {
+    if (!deleteTarget) return;
+    try {
+      await quotationTemplatesApi.deleteTemplate(deleteTarget.id);
+      setSuccessToast(`Template "${deleteTarget.template_name}" deleted.`);
+      setDeleteTarget(null);
+      setModalMode(null);
+      fetchTemplates();
+    } catch (err) {
+      setError(err.message || 'Failed to delete template.');
+    }
+  }
+
+  return (
+    <>
+      <div className="products-filter-toolbar">
+        <div className="search-input-box">
+          <span className="search-icon"><AdminIcon name="search" size={16} /></span>
+          <input
+            type="text"
+            placeholder="Search templates by title or description..."
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            className="product-search-field"
+          />
+          {search && (
+            <button type="button" className="search-clear-btn" onClick={() => setSearch('')}>×</button>
+          )}
         </div>
-    );
+
+        <div className="header-action-group">
+          <button
+            type="button"
+            className="btn-primary-action"
+            onClick={() => {
+              setSelectedTemplate(null);
+              setModalMode('create');
+            }}
+          >
+            <AdminIcon name="plus" size={16} />
+            <span>Create Template</span>
+          </button>
+        </div>
+      </div>
+
+      <div className="table-card">
+        {loading ? (
+          <div className="table-loading-state">
+            <div className="loading-spinner" />
+            <p>Loading quotation templates...</p>
+          </div>
+        ) : templates.length === 0 ? (
+          <div className="table-empty-state">
+            <div className="empty-state-icon">
+              <AdminIcon name="quotations" size={48} />
+            </div>
+            <h3>No quotation templates found</h3>
+            <p>Create reusable templates to quickly build customer proposals.</p>
+          </div>
+        ) : (
+          <div className="table-responsive">
+            <table className="products-data-table">
+              <thead>
+                <tr>
+                  <th>Template Name</th>
+                  <th>Description</th>
+                  <th>Products Included</th>
+                  <th style={{ textAlign: 'center' }}>Validity</th>
+                  <th>Estimated Price</th>
+                  <th>Status</th>
+                  <th className="text-right">Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                {templates.map((t) => (
+                  <tr key={t.id}>
+                    <td className="font-semibold text-navy">{t.template_name}</td>
+                    <td className="product-cell-desc line-clamp-1">{t.description || '—'}</td>
+                    <td>{t.product_names || `${t.item_count} product(s)`}</td>
+                    <td style={{ textAlign: 'center' }}>{t.validity_days} days</td>
+                    <td className="font-semibold">{formatCurrency(t.total_price)}</td>
+                    <td>
+                      <button
+                        type="button"
+                        className={`status-toggle-btn ${t.is_active ? 'active' : 'inactive'}`}
+                        onClick={() => handleToggleStatus(t)}
+                      >
+                        <span className={`status-dot ${t.is_active ? 'dot-active' : 'dot-inactive'}`} />
+                        <span>{t.is_active ? 'Active' : 'Inactive'}</span>
+                      </button>
+                    </td>
+                    <td className="text-right">
+                      <div className="table-actions">
+                        <button
+                          type="button"
+                          className="action-btn-icon text-danger"
+                          title="Delete template"
+                          onClick={() => {
+                            setDeleteTarget(t);
+                            setModalMode('delete');
+                          }}
+                        >
+                          <AdminIcon name="trash" size={15} />
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+
+      {modalMode === 'delete' && deleteTarget && (
+        <div
+          className="admin-modal-overlay"
+          role="dialog"
+          aria-modal="true"
+          onMouseDown={(e) => e.target === e.currentTarget && setModalMode(null)}
+        >
+          <div className="admin-modal-card modal-sm">
+            <div className="modal-header">
+              <div className="modal-title-wrap">
+                <h2 className="modal-title">Delete Template</h2>
+              </div>
+              <button type="button" className="modal-close-btn" onClick={() => setModalMode(null)}>×</button>
+            </div>
+            <div className="modal-form-body">
+              <p style={{ fontSize: '0.9rem', color: 'var(--text-secondary)' }}>
+                Delete template <strong>"{deleteTarget.template_name}"</strong>?
+              </p>
+              <div className="modal-form-actions" style={{ marginTop: '20px' }}>
+                <button type="button" className="btn-secondary" onClick={() => setModalMode(null)}>Cancel</button>
+                <button type="button" className="btn-danger-action" onClick={handleDelete}>Delete</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+    </>
+  );
+}
+
+// ─── Main Page Export ──────────────────────────────────────────────────────────
+export function QuotationsPage({ initialTab = 'quotations', onNavigate }) {
+  const [activeTab, setActiveTab] = useState(initialTab);
+  const [successToast, setSuccessToast] = useState(null);
+  const [error, setError] = useState(null);
+
+  useEffect(() => {
+    if (initialTab) setActiveTab(initialTab);
+  }, [initialTab]);
+
+  useEffect(() => {
+    if (successToast) {
+      const timer = setTimeout(() => setSuccessToast(null), 4000);
+      return () => clearTimeout(timer);
+    }
+  }, [successToast]);
+
+  return (
+    <div className="people-module-root" id="quotations-module">
+      {successToast && (
+        <div className="product-alert alert-success" role="alert">
+          <span className="alert-icon"><AdminIcon name="check" size={16} /></span>
+          <span className="alert-message">{successToast}</span>
+          <button type="button" className="alert-close-btn" onClick={() => setSuccessToast(null)}>×</button>
+        </div>
+      )}
+
+      {error && (
+        <div className="product-alert alert-error" role="alert">
+          <span className="alert-icon">⚠️</span>
+          <span className="alert-message">{error}</span>
+          <button type="button" className="alert-close-btn" onClick={() => setError(null)}>×</button>
+        </div>
+      )}
+
+      <div className="products-view-header">
+        <div>
+          <h1 className="products-view-title">Quotations & Proposals</h1>
+          <p className="products-view-subtitle">
+            Manage sales quotations, customer proposals, pricing approvals, and conversion to active client subscriptions.
+          </p>
+        </div>
+      </div>
+
+      {/* Tabs Bar */}
+      <div className="products-tab-nav" style={{ margin: '16px 0 20px' }}>
+        <button
+          type="button"
+          className={`tab-nav-btn ${activeTab === 'quotations' ? 'active' : ''}`}
+          onClick={() => setActiveTab('quotations')}
+        >
+          <AdminIcon name="quotations" size={16} />
+          <span>All Quotations</span>
+        </button>
+
+        <button
+          type="button"
+          className={`tab-nav-btn ${activeTab === 'templates' ? 'active' : ''}`}
+          onClick={() => setActiveTab('templates')}
+        >
+          <AdminIcon name="plans" size={16} />
+          <span>Quotation Templates</span>
+        </button>
+      </div>
+
+      {activeTab === 'quotations' ? (
+        <AllQuotationsTab
+          onNavigate={onNavigate}
+          setSuccessToast={setSuccessToast}
+          setError={setError}
+        />
+      ) : (
+        <TemplatesTab
+          setSuccessToast={setSuccessToast}
+          setError={setError}
+        />
+      )}
+    </div>
+  );
 }

@@ -7,6 +7,9 @@ import { ProductsPage } from './pages/ProductsPage';
 import { EmptyAdminPage } from './pages/EmptyAdminPage';
 import { QuotationsPage } from './pages/QuotationsPage';
 import { SubscriptionsPage } from './pages/SubscriptionsPage';
+import { CustomersPage } from './pages/CustomersPage';
+import { StaffPage } from './pages/StaffPage';
+import { SubscriptionPlansPage } from './pages/SubscriptionPlansPage';
 import { InvoicesPage } from './pages/InvoicesPage';
 import { PaymentsPage } from './pages/PaymentsPage';
 import { DiscountsPage } from './pages/DiscountsPage';
@@ -34,8 +37,11 @@ export function AdminLayout({ currentPath, onNavigate }) {
     activeRoute.id === 'dashboard' ||
     currentPath === '/admin' ||
     currentPath === '/admin/dashboard';
-  const isQuotations = activeRoute.id === 'quotations' || currentPath === '/admin/quotations';
+  const isQuotations = activeRoute.id === 'quotations' || currentPath === '/admin/quotations' || currentPath === '/admin/quotation-templates';
   const isSubscriptions = activeRoute.id === 'subscriptions' || currentPath === '/admin/subscriptions';
+  const isSubscriptionPlans = activeRoute.id === 'subscription-plans' || currentPath === '/admin/subscription-plans';
+  const isCustomers = activeRoute.id === 'customers' || currentPath === '/admin/customers';
+  const isStaff = activeRoute.id === 'staff' || currentPath === '/admin/staff';
   const isInvoices = activeRoute.id === 'invoices' || currentPath === '/admin/invoices';
   const isPayments = activeRoute.id === 'payments' || currentPath === '/admin/payments';
   const isDiscounts = activeRoute.id === 'discounts' || currentPath === '/admin/discounts';
@@ -74,10 +80,19 @@ export function AdminLayout({ currentPath, onNavigate }) {
           <div className="admin-content-container">
             {isDashboard ? (
               <DashboardPage onNavigate={onNavigate} />
+            ) : isCustomers ? (
+              <CustomersPage onNavigate={onNavigate} />
+            ) : isStaff ? (
+              <StaffPage onNavigate={onNavigate} />
             ) : isQuotations ? (
-              <QuotationsPage />
+              <QuotationsPage
+                onNavigate={onNavigate}
+                initialTab={currentPath === '/admin/quotation-templates' ? 'templates' : 'quotations'}
+              />
             ) : isSubscriptions ? (
-              <SubscriptionsPage />
+              <SubscriptionsPage onNavigate={onNavigate} />
+            ) : isSubscriptionPlans ? (
+              <SubscriptionPlansPage onNavigate={onNavigate} />
             ) : isInvoices ? (
               <InvoicesPage />
             ) : isPayments ? (

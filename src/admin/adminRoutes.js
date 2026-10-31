@@ -57,14 +57,7 @@ export const ADMIN_ROUTES = [
     breadcrumbs: [{ label: 'Admin', path: '/admin' }, { label: 'Staff Management' }],
     description: 'Internal team access, roles, and administrative permissions'
   },
-  {
-    id: 'quotation-templates',
-    label: 'Quotation Templates',
-    path: '/admin/quotation-templates',
-    icon: 'quotationTemplates',
-    breadcrumbs: [{ label: 'Admin', path: '/admin' }, { label: 'Quotation Templates' }],
-    description: 'Reusable quotation boilerplates and terms presets'
-  },
+
   {
     id: 'quotations',
     label: 'Quotations',
@@ -176,7 +169,6 @@ export const ADMIN_NAV_GROUPS = [
     icon: 'sales',
     items: [
       { id: 'quotations', label: 'Quotations', path: '/admin/quotations', icon: 'quotations' },
-      { id: 'quotation-templates', label: 'Quotation Templates', path: '/admin/quotation-templates', icon: 'quotationTemplates' },
       { id: 'subscriptions', label: 'Subscriptions', path: '/admin/subscriptions', icon: 'subscriptions' }
     ]
   },

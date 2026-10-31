@@ -32,6 +32,26 @@ app.use('/api/health', healthRouter);
 app.use('/api/auth', authRouter);
 app.use('/api/finance', financeRouter);
 
+// Products & Subscription Plans Module APIs
+const productRouter = require('./modules/products/products.routes');
+const plansRouter = require('./modules/plans/plans.routes');
+app.use('/api/products', productRouter);
+app.use('/api/subscription-plans', plansRouter);
+
+// People Module APIs: Customers & Staff
+const customersRouter = require('./modules/customers/customers.routes');
+const staffRouter = require('./modules/staff/staff.routes');
+app.use('/api/customers', customersRouter);
+app.use('/api/staff', staffRouter);
+
+// Sales Module APIs: Quotations, Quotation Templates & Subscriptions
+const quotationsRouter = require('./modules/quotations/quotations.routes');
+const quotationTemplatesRouter = require('./modules/quotations/quotationTemplates.routes');
+const subscriptionsRouter = require('./modules/subscriptions/subscriptions.routes');
+app.use('/api/quotations', quotationsRouter);
+app.use('/api/quotation-templates', quotationTemplatesRouter);
+app.use('/api/subscriptions', subscriptionsRouter);
+
 // DEV ONLY — remove before production
 if (process.env.NODE_ENV !== 'production') {
   app.use('/api/test', testRouter);

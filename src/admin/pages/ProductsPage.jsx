@@ -23,6 +23,16 @@ const DEFAULT_PRODUCT_TYPES = [
   'API Microservice'
 ];
 
+function formatCurrency(val) {
+  const num = parseFloat(val) || 0;
+  return new Intl.NumberFormat('en-IN', {
+    style: 'currency',
+    currency: 'INR',
+    maximumFractionDigits: 2
+  }).format(num);
+}
+
+
 export function ProductsPage({ onNavigate, initialTab }) {
   // --- Main State ---
   const [products, setProducts] = useState([]);
@@ -294,15 +304,15 @@ export function ProductsPage({ onNavigate, initialTab }) {
             <div className="metric-card">
               <div className="metric-label">Average Sales Price</div>
               <div className="metric-value">
-                $
                 {products.length > 0
-                  ? (
-                      products.reduce((acc, p) => acc + (p.sales_price || 0), 0) / products.length
-                    ).toFixed(2)
-                  : '0.00'}
+                  ? formatCurrency(
+                      products.reduce((acc, p) => acc + (parseFloat(p.sales_price) || 0), 0) / products.length
+                    )
+                  : formatCurrency(0)}
               </div>
               <div className="metric-meta">Standard base price tier</div>
             </div>
+
           </div>
 
           {/* Search & Filter Toolbar */}
@@ -484,11 +494,11 @@ export function ProductsPage({ onNavigate, initialTab }) {
                         </td>
 
                         <td className="font-semibold text-navy">
-                          ${parseFloat(p.sales_price || 0).toFixed(2)}
+                          {formatCurrency(p.sales_price)}
                         </td>
 
                         <td className="text-muted">
-                          ${parseFloat(p.cost_price || 0).toFixed(2)}
+                          {formatCurrency(p.cost_price)}
                         </td>
 
                         <td>
@@ -499,7 +509,7 @@ export function ProductsPage({ onNavigate, initialTab }) {
                             title="Manage Variants"
                           >
                             <AdminIcon name="variants" size={13} />
-                            <span>{p.variants_count || 0} variants</span>
+                            <span>{p.variants_count || 0}</span>
                           </button>
                         </td>
 
@@ -511,7 +521,7 @@ export function ProductsPage({ onNavigate, initialTab }) {
                             title="Manage Add-ons"
                           >
                             <AdminIcon name="addons" size={13} />
-                            <span>{p.addons_count || 0} add-ons</span>
+                            <span>{p.addons_count || 0}</span>
                           </button>
                         </td>
 
@@ -866,9 +876,10 @@ function ProductDetailTabsView({
       const effectivePrice = currentSalesPrice + adj;
       if (effectivePrice < 0) {
         throw new Error(
-          `Effective price cannot be negative ($${currentSalesPrice.toFixed(2)} + $${adj.toFixed(2)} = $${effectivePrice.toFixed(2)} < 0).`
+          `Effective price cannot be negative (₹${currentSalesPrice.toFixed(2)} + ₹${adj.toFixed(2)} = ₹${effectivePrice.toFixed(2)} < 0).`
         );
       }
+
 
       if (variantModal.isEditing) {
         await productApi.updateVariant(product.id, variantModal.data.id, {
@@ -1157,9 +1168,9 @@ function ProductDetailTabsView({
                 </div>
 
                 <div className="form-field">
-                  <label htmlFor="prod-sales-price">Sales Price ($) *</label>
+                  <label htmlFor="prod-sales-price">Sales Price (₹) *</label>
                   <div className="currency-input-wrapper">
-                    <span className="currency-symbol">$</span>
+                    <span className="currency-symbol">₹</span>
                     <input
                       id="prod-sales-price"
                       type="number"
@@ -1177,10 +1188,11 @@ function ProductDetailTabsView({
                 </div>
 
                 <div className="form-field">
-                  <label htmlFor="prod-cost-price">Cost Price ($) *</label>
+                  <label htmlFor="prod-cost-price">Cost Price (₹) *</label>
                   <div className="currency-input-wrapper">
-                    <span className="currency-symbol">$</span>
+                    <span className="currency-symbol">₹</span>
                     <input
+
                       id="prod-cost-price"
                       type="number"
                       step="0.01"
@@ -1262,7 +1274,7 @@ function ProductDetailTabsView({
               <div>
                 <h3 className="tab-pane-title">Product Variants</h3>
                 <p className="tab-pane-subtitle">
-                  Configure software editions (e.g. Starter, Pro, Enterprise), cloud regions, and billing tiers. Each variant adjusts the base price (${parseFloat(product.sales_price || 0).toFixed(2)}).
+                  Configure software editions (e.g. Starter, Pro, Enterprise), cloud regions, and billing tiers. Each variant adjusts the base price ({formatCurrency(product.sales_price)}).
                 </p>
               </div>
 
@@ -1279,7 +1291,7 @@ function ProductDetailTabsView({
             <div className="pricing-callout-banner">
               <div className="callout-item">
                 <span className="callout-label">Base Product Price:</span>
-                <span className="callout-value">${parseFloat(product.sales_price || 0).toFixed(2)}</span>
+                <span className="callout-value">{formatCurrency(product.sales_price)}</span>
               </div>
               <div className="callout-item">
                 <span className="callout-label">Configured Variants:</span>
@@ -1326,11 +1338,12 @@ function ProductDetailTabsView({
                             <span className="variant-pill">{v.variant_value}</span>
                           </td>
                           <td className={adj > 0 ? 'text-emerald' : adj < 0 ? 'text-amber' : 'text-muted'}>
-                            {adj > 0 ? `+$${adj.toFixed(2)}` : adj < 0 ? `-$${Math.abs(adj).toFixed(2)}` : '$0.00'}
+                            {adj > 0 ? `+${formatCurrency(adj)}` : adj < 0 ? `-${formatCurrency(Math.abs(adj))}` : formatCurrency(0)}
                           </td>
                           <td className="font-semibold text-navy">
-                            ${effective.toFixed(2)}
+                            {formatCurrency(effective)}
                           </td>
+
                           <td>
                             <span className={`status-pill ${v.is_active ? 'status-active' : 'status-inactive'}`}>
                               <span className="status-dot" />
@@ -1414,8 +1427,9 @@ function ProductDetailTabsView({
                       <tr key={a.id}>
                         <td className="font-semibold text-navy">{a.name}</td>
                         <td className="text-muted text-sm">{a.description || '—'}</td>
-                        <td className="font-semibold text-navy">${parseFloat(a.price || 0).toFixed(2)}</td>
-                        <td className="text-muted">${parseFloat(a.cost_price || 0).toFixed(2)}</td>
+                        <td className="font-semibold text-navy">{formatCurrency(a.price)}</td>
+                        <td className="text-muted">{formatCurrency(a.cost_price)}</td>
+
                         <td>
                           <span className={`status-pill ${a.is_active ? 'status-active' : 'status-inactive'}`}>
                             <span className="status-dot" />
@@ -1510,7 +1524,7 @@ function ProductDetailTabsView({
                 </div>
 
                 <div className="form-field">
-                  <label htmlFor="var-adj">Price Adjustment ($)</label>
+                  <label htmlFor="var-adj">Price Adjustment (₹)</label>
                   <input
                     id="var-adj"
                     type="number"
@@ -1533,13 +1547,13 @@ function ProductDetailTabsView({
                 <div className="live-effective-price-box">
                   <div className="calc-row">
                     <span>Base Sales Price:</span>
-                    <span>${parseFloat(product.sales_price || 0).toFixed(2)}</span>
+                    <span>{formatCurrency(product.sales_price)}</span>
                   </div>
                   <div className="calc-row">
                     <span>Adjustment:</span>
                     <span>
                       {parseFloat(variantModal.data.price_adjustment || 0) >= 0 ? '+' : ''}
-                      ${parseFloat(variantModal.data.price_adjustment || 0).toFixed(2)}
+                      {formatCurrency(variantModal.data.price_adjustment || 0)}
                     </span>
                   </div>
                   <div className="calc-divider" />
@@ -1552,10 +1566,9 @@ function ProductDetailTabsView({
                           : 'text-navy font-bold'
                       }
                     >
-                      $
-                      {(
+                      {formatCurrency(
                         parseFloat(product.sales_price || 0) + parseFloat(variantModal.data.price_adjustment || 0)
-                      ).toFixed(2)}
+                      )}
                     </span>
                   </div>
                   {parseFloat(product.sales_price || 0) + parseFloat(variantModal.data.price_adjustment || 0) < 0 && (
@@ -1668,7 +1681,7 @@ function ProductDetailTabsView({
 
                 <div className="form-grid-2">
                   <div className="form-field">
-                    <label htmlFor="addon-price">Add-on Price ($) *</label>
+                    <label htmlFor="addon-price">Add-on Price (₹) *</label>
                     <input
                       id="addon-price"
                       type="number"
@@ -1687,13 +1700,14 @@ function ProductDetailTabsView({
                   </div>
 
                   <div className="form-field">
-                    <label htmlFor="addon-cost">Cost Price ($)</label>
+                    <label htmlFor="addon-cost">Cost Price (₹)</label>
                     <input
                       id="addon-cost"
                       type="number"
                       step="0.01"
                       min="0"
                       placeholder="0.00"
+
                       value={addonModal.data.cost_price}
                       onChange={(e) =>
                         setAddonModal({

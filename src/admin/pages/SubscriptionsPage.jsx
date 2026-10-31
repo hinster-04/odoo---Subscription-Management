@@ -1,685 +1,1221 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
+import { subscriptionsApi } from '../services/salesApi';
+import { peopleApi } from '../services/peopleApi';
 import { AdminIcon } from '../AdminIcons';
 
-// ─── Local icon helpers ────────────────────────────────────────────────────────
-function SIcon({ name, size = 16 }) {
-    const p = {
-        width: size, height: size, viewBox: '0 0 24 24', fill: 'none',
-        stroke: 'currentColor', strokeWidth: 1.8,
-        strokeLinecap: 'round', strokeLinejoin: 'round', 'aria-hidden': true
-    };
-    const icons = {
-        plus: <><line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" /></>,
-        search: <><circle cx="11" cy="11" r="8" /><line x1="21" y1="21" x2="16.65" y2="16.65" /></>,
-        eye: <><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7Z" /><circle cx="12" cy="12" r="3" /></>,
-        edit: <><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" /><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" /></>,
-        trash: <><polyline points="3 6 5 6 21 6" /><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6" /><path d="M10 11v6M14 11v6" /><path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2" /></>,
-        pause: <><rect x="6" y="4" width="4" height="16" /><rect x="14" y="4" width="4" height="16" /></>,
-        play: <><polygon points="5 3 19 12 5 21 5 3" /></>,
-        refresh: <><path d="M23 4v6h-6" /><path d="M1 20v-6h6" /><path d="M3.51 9A9 9 0 0 1 20.49 15" /><path d="M20.49 15A9 9 0 0 1 3.51 9" /></>,
-        close: <><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></>,
-        chevLeft: <><polyline points="15 18 9 12 15 6" /></>,
-        chevRight: <><polyline points="9 18 15 12 9 6" /></>,
-        chevDown: <><polyline points="6 9 12 15 18 9" /></>,
-        x: <><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></>,
-        arrowLeft: <><line x1="19" y1="12" x2="5" y2="12" /><polyline points="12 19 5 12 12 5" /></>,
-        invoice: <><rect x="4" y="2" width="16" height="20" rx="2" /><line x1="8" y1="6" x2="16" y2="6" /><line x1="8" y1="10" x2="16" y2="10" /><line x1="8" y1="14" x2="12" y2="14" /></>,
-        payment: <><rect x="2" y="5" width="20" height="14" rx="2" /><line x1="2" y1="10" x2="22" y2="10" /><circle cx="7" cy="15" r="1.5" /></>,
-        activity: <><polyline points="22 12 18 12 15 21 9 3 6 12 2 12" /></>,
-        info: <><circle cx="12" cy="12" r="10" /><line x1="12" y1="8" x2="12" y2="12" /><line x1="12" y1="16" x2="12.01" y2="16" /></>,
-    };
-    return <svg {...p}>{icons[name] ?? null}</svg>;
+function formatCurrency(val) {
+  const num = parseFloat(val) || 0;
+  return new Intl.NumberFormat('en-IN', {
+    style: 'currency',
+    currency: 'INR',
+    maximumFractionDigits: 2
+  }).format(num);
 }
 
-// ─── Status map ───────────────────────────────────────────────────────────────
-const STATUS_MAP = {
-    Active: 'status-success',
-    Paused: 'status-warning',
-    Expired: 'status-neutral',
-    Cancelled: 'status-danger',
-    Pending: 'status-info',
-};
-function StatusPill({ status }) {
-    return <span className={`qp-status-pill ${STATUS_MAP[status] || 'status-neutral'}`}>{status}</span>;
+function StatusBadge({ status }) {
+  const s = (status || '').toLowerCase();
+  let badgeClass = 'badge-neutral';
+  if (s === 'active') badgeClass = 'badge-success';
+  else if (s === 'paused') badgeClass = 'badge-warning';
+  else if (s === 'closed') badgeClass = 'badge-danger';
+  else if (s === 'confirmed') badgeClass = 'badge-blue';
+
+  return (
+    <span className={`admin-badge ${badgeClass} capitalize`}>
+      {s}
+    </span>
+  );
 }
 
-// ─── Sample data ───────────────────────────────────────────────────────────────
-const SAMPLE_SUBSCRIPTIONS = [
-    {
-        id: 'SUB-2026-001', customer: 'Acme Corp', startDate: '2026-01-01', expiryDate: '2026-12-31',
-        billing: 'Monthly', items: 3, total: '₹13,500', nextBilling: '2026-11-01', status: 'Active',
-        paymentTerms: 'Net 30', quotation: 'Q-2026-003',
-        subscriptionItems: [
-            { product: 'Brightloop Flow', plan: 'Professional', variant: 'Cloud', addons: 'API Access', qty: 1, unitPrice: '₹1,299', tax: '18%', discount: '₹0', amount: '₹1,299' },
-            { product: 'Brightloop Books', plan: 'Standard', variant: 'Cloud', addons: '—', qty: 1, unitPrice: '₹699', tax: '18%', discount: '₹0', amount: '₹699' },
-            { product: 'Brightloop People', plan: 'Starter', variant: 'Cloud', addons: '—', qty: 5, unitPrice: '₹899', tax: '18%', discount: '₹200', amount: '₹4,295' },
-        ],
-        invoices: [
-            { no: 'INV-001', date: '2026-01-01', amount: '₹13,500', status: 'Paid' },
-            { no: 'INV-002', date: '2026-02-01', amount: '₹13,500', status: 'Paid' },
-            { no: 'INV-003', date: '2026-10-01', amount: '₹13,500', status: 'Due' },
-        ],
-        payments: [
-            { ref: 'PAY-2026-001', date: '2026-01-03', amount: '₹13,500', method: 'Bank Transfer', status: 'Settled' },
-            { ref: 'PAY-2026-002', date: '2026-02-04', amount: '₹13,500', method: 'Bank Transfer', status: 'Settled' },
-        ],
-        activity: [
-            { date: '2026-01-01', event: 'Subscription created from Quotation Q-2026-003' },
-            { date: '2026-01-01', event: 'First invoice INV-001 generated' },
-            { date: '2026-10-01', event: 'Invoice INV-003 due' },
-        ],
-    },
-    {
-        id: 'SUB-2026-002', customer: 'BlueStar Ltd', startDate: '2026-02-15', expiryDate: '2027-02-14',
-        billing: 'Quarterly', items: 5, total: '₹45,430', nextBilling: '2026-11-15', status: 'Active',
-        paymentTerms: 'Advance', quotation: 'Q-2026-002',
-        subscriptionItems: [], invoices: [], payments: [], activity: [],
-    },
-    {
-        id: 'SUB-2026-003', customer: 'Horizon Media', startDate: '2026-03-01', expiryDate: '2026-08-31',
-        billing: 'Monthly', items: 2, total: '₹9,476', nextBilling: '—', status: 'Expired',
-        paymentTerms: 'Net 15', quotation: '—',
-        subscriptionItems: [], invoices: [], payments: [], activity: [],
-    },
-    {
-        id: 'SUB-2026-004', customer: 'Nexora Systems', startDate: '2026-05-01', expiryDate: '2027-04-30',
-        billing: 'Annual', items: 7, total: '₹72,520', nextBilling: '2027-05-01', status: 'Active',
-        paymentTerms: 'Net 30', quotation: 'Q-2026-004',
-        subscriptionItems: [], invoices: [], payments: [], activity: [],
-    },
-    {
-        id: 'SUB-2026-005', customer: 'Velocity IO', startDate: '2026-06-01', expiryDate: '2026-11-30',
-        billing: 'Monthly', items: 4, total: '₹24,960', nextBilling: '2026-11-01', status: 'Paused',
-        paymentTerms: 'Net 30', quotation: '—',
-        subscriptionItems: [], invoices: [], payments: [], activity: [],
-    },
-    {
-        id: 'SUB-2026-006', customer: 'GreenLeaf FMCG', startDate: '2026-07-01', expiryDate: '2026-12-31',
-        billing: 'Monthly', items: 6, total: '₹57,916', nextBilling: '2026-11-01', status: 'Active',
-        paymentTerms: 'Net 30', quotation: 'Q-2026-007',
-        subscriptionItems: [], invoices: [], payments: [], activity: [],
-    },
-    {
-        id: 'SUB-2026-007', customer: 'Starfield Tech', startDate: '2026-08-01', expiryDate: '2027-07-31',
-        billing: 'Quarterly', items: 3, total: '₹17,200', nextBilling: '2027-02-01', status: 'Active',
-        paymentTerms: 'Advance', quotation: 'Q-2026-008',
-        subscriptionItems: [], invoices: [], payments: [], activity: [],
-    },
-    {
-        id: 'SUB-2026-008', customer: 'Orbit Finance', startDate: '2026-09-01', expiryDate: '2027-08-31',
-        billing: 'Monthly', items: 1, total: '₹5,310', nextBilling: '2026-11-01', status: 'Cancelled',
-        paymentTerms: 'Net 15', quotation: '—',
-        subscriptionItems: [], invoices: [], payments: [], activity: [],
-    },
-];
+// ─── Subscription Detail View Component ───────────────────────────────────────
+function SubscriptionDetailView({ subscriptionId, onBack, onEdit, onRefresh }) {
+  const [data, setData] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
+  const [activeTab, setActiveTab] = useState('items'); // 'items' | 'invoices' | 'payments' | 'activity'
+  const [actionLoading, setActionLoading] = useState(false);
 
-// ─── Action menu ───────────────────────────────────────────────────────────────
-function ActionMenu({ items }) {
-    const [open, setOpen] = useState(false);
-    const ref = useRef(null);
-    useEffect(() => {
-        function handler(e) { if (ref.current && !ref.current.contains(e.target)) setOpen(false); }
-        document.addEventListener('mousedown', handler);
-        return () => document.removeEventListener('mousedown', handler);
-    }, []);
+  useEffect(() => {
+    async function load() {
+      try {
+        setLoading(true);
+        const res = await subscriptionsApi.getSubscriptionById(subscriptionId);
+        setData(res.data);
+      } catch (err) {
+        setError(err.message || 'Failed to load subscription.');
+      } finally {
+        setLoading(false);
+      }
+    }
+    load();
+  }, [subscriptionId]);
+
+  async function handleStatusChange(newStatus) {
+    try {
+      setActionLoading(true);
+      await subscriptionsApi.updateStatus(subscriptionId, newStatus);
+      const res = await subscriptionsApi.getSubscriptionById(subscriptionId);
+      setData(res.data);
+      if (onRefresh) onRefresh();
+    } catch (err) {
+      alert(`Status update failed: ${err.message}`);
+    } finally {
+      setActionLoading(false);
+    }
+  }
+
+  if (loading) {
     return (
-        <div className="qp-action-root" ref={ref}>
-            <button className="qp-action-btn" onClick={() => setOpen(o => !o)} aria-label="Actions" type="button">···</button>
-            {open && (
-                <ul className="qp-action-menu" role="menu">
-                    {items.map(item => (
-                        <li key={item.label} role="menuitem">
+      <div className="table-card" style={{ padding: '40px', textAlign: 'center' }}>
+        <div className="table-loading-state">
+          <div className="loading-spinner" />
+          <p>Loading subscription contract from Neon database...</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (error || !data) {
+    return (
+      <div>
+        <button type="button" className="btn-secondary" onClick={onBack} style={{ marginBottom: '16px' }}>
+          ← Back to Subscriptions
+        </button>
+        <div className="product-alert alert-error">
+          <span className="alert-message">{error || 'Subscription not found.'}</span>
+        </div>
+      </div>
+    );
+  }
+
+  const customerName = [data.customer_first_name, data.customer_last_name].filter(Boolean).join(' ') || data.business_name || 'Client';
+
+  return (
+    <div>
+      {/* Topbar */}
+      <div className="products-view-header" style={{ marginBottom: '20px' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '14px' }}>
+          <button type="button" className="btn-secondary" onClick={onBack}>
+            ← Back
+          </button>
+          <div>
+            <h1 className="products-view-title" style={{ fontSize: '1.4rem', margin: 0 }}>
+              {data.subscription_number}
+            </h1>
+            <p className="products-view-subtitle" style={{ margin: 0 }}>
+              {customerName} {data.business_name && customerName !== data.business_name ? `(${data.business_name})` : ''}
+            </p>
+          </div>
+        </div>
+
+        <div className="header-action-group">
+          {data.status === 'active' && (
+            <button
+              type="button"
+              className="btn-secondary"
+              disabled={actionLoading}
+              onClick={() => handleStatusChange('paused')}
+            >
+              Pause Subscription
+            </button>
+          )}
+
+          {data.status === 'paused' && (
+            <button
+              type="button"
+              className="btn-primary-action"
+              disabled={actionLoading}
+              onClick={() => handleStatusChange('active')}
+            >
+              Resume Subscription
+            </button>
+          )}
+
+          {data.status !== 'closed' && (
+            <button
+              type="button"
+              className="btn-secondary text-danger"
+              disabled={actionLoading}
+              onClick={() => {
+                if (confirm('Close this subscription account?')) {
+                  handleStatusChange('closed');
+                }
+              }}
+            >
+              Close Subscription
+            </button>
+          )}
+
+          <button
+            type="button"
+            className="btn-secondary"
+            onClick={() => onEdit(data.id)}
+          >
+            Edit
+          </button>
+        </div>
+      </div>
+
+      {/* Contract Detail Card */}
+      <div className="table-card" style={{ padding: '24px', marginBottom: '20px' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
+          <h3 style={{ margin: 0, fontSize: '1.1rem', color: 'var(--admin-navy)' }}>Contract Summary</h3>
+          <StatusBadge status={data.status} />
+        </div>
+
+        <div className="admin-detail-grid">
+          <div className="detail-field-group">
+            <label>Start Date</label>
+            <p className="font-semibold">{data.start_date}</p>
+          </div>
+
+          <div className="detail-field-group">
+            <label>Expiry Date</label>
+            <p>{data.expiry_date || 'Ongoing (No set expiry)'}</p>
+          </div>
+
+          <div className="detail-field-group">
+            <label>Billing Cycle</label>
+            <p className="capitalize font-semibold">{data.billing_frequency}</p>
+          </div>
+
+          <div className="detail-field-group">
+            <label>Payment Terms</label>
+            <p>{data.payment_terms || 'Net 30'}</p>
+          </div>
+
+          <div className="detail-field-group">
+            <label>Next Billing Date</label>
+            <p className="font-semibold text-blue">{data.next_billing_date || '—'}</p>
+          </div>
+
+          <div className="detail-field-group">
+            <label>Recurring Total</label>
+            <p className="font-bold text-navy" style={{ fontSize: '1.2rem', color: 'var(--color-primary)' }}>
+              {formatCurrency(data.total_amount)}
+            </p>
+          </div>
+
+          {data.related_quotation_number && (
+            <div className="detail-field-group">
+              <label>Source Quotation</label>
+              <p className="font-mono font-semibold">{data.related_quotation_number}</p>
+            </div>
+          )}
+
+          {data.creator_first_name && (
+            <div className="detail-field-group">
+              <label>Account Manager</label>
+              <p>{data.creator_first_name} {data.creator_last_name || ''}</p>
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* Detail Section Tabs */}
+      <div className="products-tab-nav" style={{ marginBottom: '16px' }}>
+        <button
+          type="button"
+          className={`tab-nav-btn ${activeTab === 'items' ? 'active' : ''}`}
+          onClick={() => setActiveTab('items')}
+        >
+          <span>Subscription Items ({data.items?.length || 0})</span>
+        </button>
+
+        <button
+          type="button"
+          className={`tab-nav-btn ${activeTab === 'invoices' ? 'active' : ''}`}
+          onClick={() => setActiveTab('invoices')}
+        >
+          <span>Invoices</span>
+        </button>
+
+        <button
+          type="button"
+          className={`tab-nav-btn ${activeTab === 'payments' ? 'active' : ''}`}
+          onClick={() => setActiveTab('payments')}
+        >
+          <span>Payment Settlements</span>
+        </button>
+
+        <button
+          type="button"
+          className={`tab-nav-btn ${activeTab === 'activity' ? 'active' : ''}`}
+          onClick={() => setActiveTab('activity')}
+        >
+          <span>Activity Log</span>
+        </button>
+      </div>
+
+      {/* Section Content */}
+      <div className="table-card">
+        {activeTab === 'items' && (
+          <div className="table-responsive">
+            <table className="products-data-table">
+              <thead>
+                <tr>
+                  <th>Product Name</th>
+                  <th>Frequency</th>
+                  <th style={{ textAlign: 'center' }}>Quantity</th>
+                  <th>Unit Price</th>
+                  <th>GST Tax</th>
+                  <th>Discount</th>
+                  <th className="text-right">Total Recurring</th>
+                </tr>
+              </thead>
+              <tbody>
+                {data.items?.length === 0 ? (
+                  <tr><td colSpan={7} className="table-empty-state">No items attached.</td></tr>
+                ) : (
+                  data.items.map((it) => (
+                    <tr key={it.id}>
+                      <td className="font-semibold text-navy">{it.product_name}</td>
+                      <td className="capitalize">{it.billing_frequency || data.billing_frequency}</td>
+                      <td style={{ textAlign: 'center' }}>{it.quantity}</td>
+                      <td>{formatCurrency(it.unit_price)}</td>
+                      <td>{it.tax_rate}%</td>
+                      <td>{formatCurrency(it.discount_amount)}</td>
+                      <td className="text-right font-bold text-navy">{formatCurrency(it.total_amount)}</td>
+                    </tr>
+                  ))
+                )}
+              </tbody>
+            </table>
+          </div>
+        )}
+
+        {activeTab === 'invoices' && (
+          <div className="table-empty-state" style={{ padding: '40px' }}>
+            <div className="empty-state-icon">
+              <AdminIcon name="invoices" size={40} />
+            </div>
+            <h3>Invoices Module</h3>
+            <p>Cycle billing invoices will appear here once generated in the upcoming Finance & Invoicing release.</p>
+          </div>
+        )}
+
+        {activeTab === 'payments' && (
+          <div className="table-empty-state" style={{ padding: '40px' }}>
+            <div className="empty-state-icon">
+              <AdminIcon name="payments" size={40} />
+            </div>
+            <h3>Payment Transactions</h3>
+            <p>Gateway settlement transactions will sync here as payments occur.</p>
+          </div>
+        )}
+
+        {activeTab === 'activity' && (
+          <div style={{ padding: '24px' }}>
+            <ul style={{ listStyle: 'none', padding: 0, margin: 0, display: 'flex', flexDirection: 'column', gap: '16px' }}>
+              <li style={{ display: 'flex', gap: '12px', alignItems: 'flex-start' }}>
+                <span style={{ width: '10px', height: '10px', borderRadius: '50%', backgroundColor: 'var(--admin-blue)', marginTop: '5px' }} />
+                <div>
+                  <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>
+                    {data.created_at ? new Date(data.created_at).toLocaleString() : data.start_date}
+                  </div>
+                  <div style={{ fontSize: '0.9rem', color: 'var(--admin-navy)', fontWeight: 600 }}>
+                    Subscription {data.subscription_number} initiated
+                    {data.related_quotation_number ? ` (Converted from Quotation ${data.related_quotation_number})` : ''}
+                  </div>
+                </div>
+              </li>
+              {data.activated_at && (
+                <li style={{ display: 'flex', gap: '12px', alignItems: 'flex-start' }}>
+                  <span style={{ width: '10px', height: '10px', borderRadius: '50%', backgroundColor: 'var(--color-success)', marginTop: '5px' }} />
+                  <div>
+                    <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>
+                      {new Date(data.activated_at).toLocaleString()}
+                    </div>
+                    <div style={{ fontSize: '0.9rem', color: 'var(--admin-navy)', fontWeight: 600 }}>
+                      Contract activated with status '{data.status}'
+                    </div>
+                  </div>
+                </li>
+              )}
+            </ul>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ─── Main Subscriptions Page Component ─────────────────────────────────────────
+export function SubscriptionsPage({ onNavigate }) {
+  const [subscriptions, setSubscriptions] = useState([]);
+  const [meta, setMeta] = useState({ total: 0, total_pages: 1, summary: {} });
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
+  const [successToast, setSuccessToast] = useState(null);
+
+  const [search, setSearch] = useState('');
+  const [statusFilter, setStatusFilter] = useState('all');
+  const [frequencyFilter, setFrequencyFilter] = useState('all');
+  const [sortBy, setSortBy] = useState('created_at');
+  const [sortOrder, setSortOrder] = useState('desc');
+  const [currentPage, setCurrentPage] = useState(1);
+  const [pageSize, setPageSize] = useState(10);
+
+  const [selectedSubId, setSelectedSubId] = useState(null);
+  const [modalMode, setModalMode] = useState(null); // 'create' | 'edit' | 'delete'
+  const [editTargetId, setEditTargetId] = useState(null);
+  const [deleteTarget, setDeleteTarget] = useState(null);
+
+  useEffect(() => {
+    if (successToast) {
+      const timer = setTimeout(() => setSuccessToast(null), 4000);
+      return () => clearTimeout(timer);
+    }
+  }, [successToast]);
+
+  const fetchSubscriptions = useCallback(async () => {
+    setLoading(true);
+    try {
+      const res = await subscriptionsApi.getSubscriptions({
+        search,
+        status: statusFilter,
+        billing_frequency: frequencyFilter,
+        sort_by: sortBy,
+        sort_order: sortOrder,
+        page: currentPage,
+        limit: pageSize
+      });
+      setSubscriptions(res.data || []);
+      setMeta(res.meta || { total: 0, total_pages: 1, summary: {} });
+    } catch (err) {
+      setError(err.message || 'Failed to fetch subscriptions from database.');
+    } finally {
+      setLoading(false);
+    }
+  }, [search, statusFilter, frequencyFilter, sortBy, sortOrder, currentPage, pageSize]);
+
+  useEffect(() => {
+    fetchSubscriptions();
+  }, [fetchSubscriptions]);
+
+  async function handleToggleStatus(sub, targetStatus) {
+    try {
+      await subscriptionsApi.updateStatus(sub.id, targetStatus);
+      setSuccessToast(`Subscription status updated to ${targetStatus}.`);
+      fetchSubscriptions();
+    } catch (err) {
+      setError(err.message || 'Failed to update subscription status.');
+    }
+  }
+
+  async function handleDelete() {
+    if (!deleteTarget) return;
+    try {
+      await subscriptionsApi.deleteSubscription(deleteTarget.id);
+      setSuccessToast(`Subscription ${deleteTarget.subscription_number} deleted.`);
+      setDeleteTarget(null);
+      setModalMode(null);
+      fetchSubscriptions();
+    } catch (err) {
+      setError(err.message || 'Failed to delete subscription.');
+    }
+  }
+
+  if (selectedSubId) {
+    return (
+      <div className="people-module-root">
+        <SubscriptionDetailView
+          subscriptionId={selectedSubId}
+          onBack={() => setSelectedSubId(null)}
+          onEdit={(id) => {
+            setEditTargetId(id);
+            setModalMode('edit');
+          }}
+          onRefresh={fetchSubscriptions}
+        />
+      </div>
+    );
+  }
+
+  const summary = meta.summary || {};
+
+  return (
+    <div className="people-module-root" id="subscriptions-module">
+      {/* Toast Alert */}
+      {successToast && (
+        <div className="product-alert alert-success" role="alert">
+          <span className="alert-icon"><AdminIcon name="check" size={16} /></span>
+          <span className="alert-message">{successToast}</span>
+          <button type="button" className="alert-close-btn" onClick={() => setSuccessToast(null)}>×</button>
+        </div>
+      )}
+
+      {error && (
+        <div className="product-alert alert-error" role="alert">
+          <span className="alert-icon">⚠️</span>
+          <span className="alert-message">{error}</span>
+          <button type="button" className="alert-close-btn" onClick={() => setError(null)}>×</button>
+        </div>
+      )}
+
+      {/* Header Bar */}
+      <div className="products-view-header">
+        <div>
+          <h1 className="products-view-title">Client Subscriptions</h1>
+          <p className="products-view-subtitle">
+            Manage active client subscriptions, contract renewals, upgrades, billing cycles, and automated closures.
+          </p>
+        </div>
+
+        <div className="header-action-group">
+          <button
+            type="button"
+            className="btn-refresh"
+            onClick={fetchSubscriptions}
+            title="Refresh subscriptions"
+          >
+            <AdminIcon name="subscriptions" size={16} />
+            <span>Refresh</span>
+          </button>
+
+          <button
+            type="button"
+            className="btn-primary-action"
+            onClick={() => {
+              setEditTargetId(null);
+              setModalMode('create');
+            }}
+          >
+            <AdminIcon name="plus" size={16} />
+            <span>New Subscription</span>
+          </button>
+        </div>
+      </div>
+
+      {/* Metrics Row */}
+      <div className="products-metrics-grid grid-4-cols">
+        <div className="metric-card">
+          <div className="metric-label">Total Subscriptions</div>
+          <div className="metric-value">{summary.total_subscriptions ?? meta.total}</div>
+          <div className="metric-meta">Active and historical client accounts</div>
+        </div>
+
+        <div className="metric-card">
+          <div className="metric-label">Active Subscriptions</div>
+          <div className="metric-value text-emerald">{summary.active_count ?? 0}</div>
+          <div className="metric-meta text-emerald">Generating recurring ARR/MRR</div>
+        </div>
+
+        <div className="metric-card">
+          <div className="metric-label">Paused Contracts</div>
+          <div className="metric-value text-warning">{summary.paused_count ?? 0}</div>
+          <div className="metric-meta">Temporarily suspended service</div>
+        </div>
+
+        <div className="metric-card">
+          <div className="metric-label">Active Contract Value</div>
+          <div className="metric-value text-blue">
+            {formatCurrency(summary.active_revenue_total || 0)}
+          </div>
+          <div className="metric-meta">Live active billing volume</div>
+        </div>
+      </div>
+
+      {/* Filter Toolbar */}
+      <div className="products-filter-toolbar">
+        <div className="search-input-box">
+          <span className="search-icon"><AdminIcon name="search" size={16} /></span>
+          <input
+            type="text"
+            placeholder="Search by subscription #, customer name, or business..."
+            value={search}
+            onChange={(e) => {
+              setSearch(e.target.value);
+              setCurrentPage(1);
+            }}
+            className="product-search-field"
+          />
+          {search && (
+            <button type="button" className="search-clear-btn" onClick={() => setSearch('')}>×</button>
+          )}
+        </div>
+
+        <div className="filters-row">
+          <select
+            className="filter-select"
+            value={statusFilter}
+            onChange={(e) => {
+              setStatusFilter(e.target.value);
+              setCurrentPage(1);
+            }}
+          >
+            <option value="all">All Status</option>
+            <option value="active">Active Only</option>
+            <option value="paused">Paused Only</option>
+            <option value="expired">Expired</option>
+            <option value="closed">Closed</option>
+          </select>
+
+          <select
+            className="filter-select"
+            value={frequencyFilter}
+            onChange={(e) => {
+              setFrequencyFilter(e.target.value);
+              setCurrentPage(1);
+            }}
+          >
+            <option value="all">All Frequencies</option>
+            <option value="monthly">Monthly</option>
+            <option value="yearly">Yearly</option>
+            <option value="weekly">Weekly</option>
+            <option value="daily">Daily</option>
+          </select>
+
+          <select
+            className="filter-select"
+            value={`${sortBy}:${sortOrder}`}
+            onChange={(e) => {
+              const [field, order] = e.target.value.split(':');
+              setSortBy(field);
+              setSortOrder(order);
+            }}
+          >
+            <option value="created_at:desc">Newest Added</option>
+            <option value="created_at:asc">Oldest Added</option>
+            <option value="subscription_number:desc">Sub # (Desc)</option>
+            <option value="total_amount:desc">Amount: High to Low</option>
+            <option value="total_amount:asc">Amount: Low to High</option>
+            <option value="expiry_date:asc">Expiry Soonest</option>
+          </select>
+        </div>
+      </div>
+
+      {/* Table Card */}
+      <div className="table-card">
+        {loading ? (
+          <div className="table-loading-state">
+            <div className="loading-spinner" />
+            <p>Loading subscriptions from Neon PostgreSQL database...</p>
+          </div>
+        ) : subscriptions.length === 0 ? (
+          <div className="table-empty-state">
+            <div className="empty-state-icon">
+              <AdminIcon name="subscriptions" size={48} />
+            </div>
+            <h3>No subscriptions found</h3>
+            <p>No subscription records matched your search or filter settings.</p>
+          </div>
+        ) : (
+          <div className="table-responsive">
+            <table className="products-data-table">
+              <thead>
+                <tr>
+                  <th>Subscription No.</th>
+                  <th>Customer</th>
+                  <th>Start Date</th>
+                  <th>Expiry Date</th>
+                  <th>Frequency</th>
+                  <th>Next Billing</th>
+                  <th>Recurring Amount</th>
+                  <th>Status</th>
+                  <th className="text-right">Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                {subscriptions.map((s) => {
+                  const customerName = [s.customer_first_name, s.customer_last_name].filter(Boolean).join(' ') || s.business_name || 'Customer';
+                  return (
+                    <tr key={s.id}>
+                      <td className="product-cell-name">
+                        <span
+                          className="product-name-link font-mono font-semibold"
+                          onClick={() => setSelectedSubId(s.id)}
+                          role="button"
+                          tabIndex={0}
+                          onKeyDown={(e) => e.key === 'Enter' && setSelectedSubId(s.id)}
+                        >
+                          {s.subscription_number}
+                        </span>
+                      </td>
+
+                      <td>
+                        <div className="customer-avatar-name">
+                          <div className="customer-initials-badge">
+                            {(customerName[0] || 'C').toUpperCase()}
+                          </div>
+                          <div>
+                            <div className="font-semibold text-navy">{customerName}</div>
+                            {s.business_name && customerName !== s.business_name && (
+                              <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>{s.business_name}</div>
+                            )}
+                          </div>
+                        </div>
+                      </td>
+
+                      <td>{s.start_date}</td>
+                      <td>{s.expiry_date || '—'}</td>
+                      <td><span className="admin-badge badge-neutral capitalize">{s.billing_frequency}</span></td>
+                      <td>{s.next_billing_date || '—'}</td>
+                      <td className="font-bold text-navy">{formatCurrency(s.total_amount)}</td>
+                      <td><StatusBadge status={s.status} /></td>
+
+                      <td className="text-right">
+                        <div className="table-actions">
+                          <button
+                            type="button"
+                            className="action-btn-icon"
+                            title="View subscription"
+                            onClick={() => setSelectedSubId(s.id)}
+                          >
+                            <AdminIcon name="customers" size={15} />
+                          </button>
+
+                          <button
+                            type="button"
+                            className="action-btn-icon"
+                            title="Edit subscription"
+                            onClick={() => {
+                              setEditTargetId(s.id);
+                              setModalMode('edit');
+                            }}
+                          >
+                            <AdminIcon name="edit" size={15} />
+                          </button>
+
+                          {s.status === 'active' && (
                             <button
-                                className={`qp-action-item${item.danger ? ' danger' : ''}`}
-                                onClick={() => { item.onClick?.(); setOpen(false); }}
-                                type="button"
+                              type="button"
+                              className="action-btn-icon text-warning"
+                              title="Pause subscription"
+                              onClick={() => handleToggleStatus(s, 'paused')}
                             >
-                                <SIcon name={item.icon} size={14} />
-                                {item.label}
+                              <AdminIcon name="subscriptions" size={15} />
                             </button>
-                        </li>
-                    ))}
-                </ul>
-            )}
-        </div>
-    );
-}
+                          )}
 
-// ─── Backend notice ────────────────────────────────────────────────────────────
-function BackendNotice({ message }) {
-    return (
-        <div className="qp-backend-notice" role="status">
-            <SIcon name="info" size={15} />
-            <span>{message}</span>
-        </div>
-    );
-}
-
-// ─── Modal shell ───────────────────────────────────────────────────────────────
-function Modal({ title, onClose, wide = false, children }) {
-    useEffect(() => {
-        const handler = (e) => { if (e.key === 'Escape') onClose(); };
-        window.addEventListener('keydown', handler);
-        return () => window.removeEventListener('keydown', handler);
-    }, [onClose]);
-    return (
-        <div className="qp-modal-backdrop" role="presentation" onMouseDown={e => e.target === e.currentTarget && onClose()}>
-            <div className={`qp-modal${wide ? ' qp-modal-wide' : ''}`} role="dialog" aria-modal="true" aria-labelledby="sp-modal-title">
-                <div className="qp-modal-header">
-                    <h3 id="sp-modal-title" className="qp-modal-title">{title}</h3>
-                    <button className="qp-modal-close" onClick={onClose} aria-label="Close" type="button">
-                        <SIcon name="x" size={18} />
-                    </button>
-                </div>
-                <div className="qp-modal-body">{children}</div>
-            </div>
-        </div>
-    );
-}
-
-// ─── Subscription form modal ───────────────────────────────────────────────────
-function SubscriptionFormModal({ subscription, onClose }) {
-    return (
-        <Modal title={subscription ? `Edit Subscription ${subscription.id}` : 'Create Subscription'} onClose={onClose}>
-            <BackendNotice message={subscription
-                ? 'Connect PUT /api/subscriptions/:id to save changes.'
-                : 'Connect POST /api/subscriptions to create a new subscription.'} />
-            <form className="qp-form" onSubmit={e => e.preventDefault()}>
-                <div className="qp-form-row">
-                    <div className="qp-field">
-                        <label htmlFor="sf-customer">Customer</label>
-                        <input id="sf-customer" type="text" placeholder="Search or select customer…" defaultValue={subscription?.customer || ''} />
-                    </div>
-                    <div className="qp-field">
-                        <label htmlFor="sf-billing">Billing Frequency</label>
-                        <select id="sf-billing" defaultValue={subscription?.billing || 'Monthly'}>
-                            <option>Monthly</option>
-                            <option>Quarterly</option>
-                            <option>Semi-annual</option>
-                            <option>Annual</option>
-                        </select>
-                    </div>
-                </div>
-                <div className="qp-form-row">
-                    <div className="qp-field">
-                        <label htmlFor="sf-start">Start Date</label>
-                        <input id="sf-start" type="date" defaultValue={subscription?.startDate || ''} />
-                    </div>
-                    <div className="qp-field">
-                        <label htmlFor="sf-expiry">Expiry Date</label>
-                        <input id="sf-expiry" type="date" defaultValue={subscription?.expiryDate || ''} />
-                    </div>
-                </div>
-                <div className="qp-field">
-                    <label htmlFor="sf-payment">Payment Terms</label>
-                    <select id="sf-payment" defaultValue={subscription?.paymentTerms || 'Net 30'}>
-                        <option>Net 15</option>
-                        <option>Net 30</option>
-                        <option>Advance</option>
-                    </select>
-                </div>
-                <div className="qp-field">
-                    <label>Subscription Items</label>
-                    <BackendNotice message="Connect GET /api/products and GET /api/subscription-plans to load options." />
-                    <div className="qp-placeholder-block">Item rows (product, plan, variant, add-ons, qty, price, tax, discount) will be editable once APIs are connected.</div>
-                </div>
-                <div className="qp-modal-footer">
-                    <button className="qp-btn qp-btn-ghost" onClick={onClose} type="button">Cancel</button>
-                    <button className="qp-btn qp-btn-primary" type="submit">
-                        {subscription ? 'Save Changes' : 'Create Subscription'}
-                    </button>
-                </div>
-            </form>
-        </Modal>
-    );
-}
-
-// ─── Confirm action modal ─────────────────────────────────────────────────────
-function ConfirmModal({ title, message, endpoint, onClose, danger = false }) {
-    return (
-        <Modal title={title} onClose={onClose}>
-            <BackendNotice message={`Connect ${endpoint} to execute this operation.`} />
-            <p className="qp-delete-text">{message}</p>
-            <div className="qp-modal-footer">
-                <button className="qp-btn qp-btn-ghost" onClick={onClose} type="button">Cancel</button>
-                <button className={`qp-btn ${danger ? 'qp-btn-danger' : 'qp-btn-primary'}`} type="button" onClick={onClose}>Confirm</button>
-            </div>
-        </Modal>
-    );
-}
-
-// ─── Subscription detail view ─────────────────────────────────────────────────
-function SubscriptionDetailView({ subscription, onBack, onEdit }) {
-    const [section, setSection] = useState('items');
-    const sections = [
-        { id: 'items', label: 'Subscription Items', icon: 'invoice' },
-        { id: 'invoices', label: 'Invoice History', icon: 'invoice' },
-        { id: 'payments', label: 'Payment History', icon: 'payment' },
-        { id: 'activity', label: 'Activity History', icon: 'activity' },
-    ];
-
-    return (
-        <div className="sp-detail-page" id={`subscription-detail-${subscription.id}`}>
-            {/* Back + header */}
-            <div className="sp-detail-topbar">
-                <button className="qp-btn qp-btn-ghost sp-back-btn" onClick={onBack} type="button">
-                    <SIcon name="arrowLeft" size={15} /> Back to Subscriptions
-                </button>
-                <div className="sp-detail-actions">
-                    <button className="qp-btn qp-btn-ghost" type="button" onClick={onEdit}>
-                        <SIcon name="edit" size={14} /> Edit
-                    </button>
-                </div>
-            </div>
-
-            {/* Info card */}
-            <div className="sp-detail-card">
-                <div className="sp-detail-card-top">
-                    <div>
-                        <p className="sp-detail-id font-mono">{subscription.id}</p>
-                        <h2 className="sp-detail-customer">{subscription.customer}</h2>
-                    </div>
-                    <StatusPill status={subscription.status} />
-                </div>
-                <div className="sp-info-grid">
-                    <div className="sp-info-item"><span className="sp-info-label">Start Date</span><span className="sp-info-value">{subscription.startDate}</span></div>
-                    <div className="sp-info-item"><span className="sp-info-label">Expiry Date</span><span className="sp-info-value">{subscription.expiryDate}</span></div>
-                    <div className="sp-info-item"><span className="sp-info-label">Billing Frequency</span><span className="sp-info-value">{subscription.billing}</span></div>
-                    <div className="sp-info-item"><span className="sp-info-label">Payment Terms</span><span className="sp-info-value">{subscription.paymentTerms}</span></div>
-                    <div className="sp-info-item"><span className="sp-info-label">Next Billing Date</span><span className="sp-info-value">{subscription.nextBilling}</span></div>
-                    <div className="sp-info-item"><span className="sp-info-label">Total Amount</span><span className="sp-info-value sp-total">{subscription.total}</span></div>
-                    {subscription.quotation !== '—' && (
-                        <div className="sp-info-item"><span className="sp-info-label">Related Quotation</span><span className="sp-info-value font-mono">{subscription.quotation}</span></div>
-                    )}
-                </div>
-            </div>
-
-            {/* Section tabs */}
-            <div className="sp-section-tabs" role="tablist" aria-label="Subscription sections">
-                {sections.map(s => (
-                    <button
-                        key={s.id}
-                        role="tab"
-                        aria-selected={section === s.id}
-                        className={`sp-section-tab${section === s.id ? ' active' : ''}`}
-                        onClick={() => setSection(s.id)}
-                        type="button"
-                    >
-                        <SIcon name={s.icon} size={15} />
-                        {s.label}
-                    </button>
-                ))}
-            </div>
-
-            {/* Section content */}
-            <div className="qp-table-wrap">
-                {section === 'items' && (
-                    <>
-                        <BackendNotice message="Connect GET /api/subscriptions/:id/items to load subscription items." />
-                        {subscription.subscriptionItems.length > 0 ? (
-                            <table className="qp-table" aria-label="Subscription items">
-                                <thead>
-                                    <tr>
-                                        <th>Product</th>
-                                        <th>Plan</th>
-                                        <th>Variant</th>
-                                        <th>Add-ons</th>
-                                        <th style={{ textAlign: 'center' }}>Qty</th>
-                                        <th>Unit Price</th>
-                                        <th>Tax</th>
-                                        <th>Discount</th>
-                                        <th>Amount</th>
-                                    </tr>
-                                </thead>
-                                <tbody>
-                                    {subscription.subscriptionItems.map((item, idx) => (
-                                        <tr key={idx}>
-                                            <td>{item.product}</td>
-                                            <td>{item.plan}</td>
-                                            <td>{item.variant}</td>
-                                            <td>{item.addons}</td>
-                                            <td style={{ textAlign: 'center' }}>{item.qty}</td>
-                                            <td>{item.unitPrice}</td>
-                                            <td>{item.tax}</td>
-                                            <td>{item.discount}</td>
-                                            <td className="qp-total-cell">{item.amount}</td>
-                                        </tr>
-                                    ))}
-                                </tbody>
-                            </table>
-                        ) : (
-                            <div className="qp-placeholder-block">No items loaded — connect the items API to populate this section.</div>
-                        )}
-                    </>
-                )}
-
-                {section === 'invoices' && (
-                    <>
-                        <BackendNotice message="Connect GET /api/subscriptions/:id/invoices to load invoice history." />
-                        {subscription.invoices.length > 0 ? (
-                            <table className="qp-table" aria-label="Invoice history">
-                                <thead>
-                                    <tr>
-                                        <th>Invoice No.</th>
-                                        <th>Date</th>
-                                        <th>Amount</th>
-                                        <th>Status</th>
-                                    </tr>
-                                </thead>
-                                <tbody>
-                                    {subscription.invoices.map(inv => (
-                                        <tr key={inv.no}>
-                                            <td className="font-mono">{inv.no}</td>
-                                            <td>{inv.date}</td>
-                                            <td className="qp-total-cell">{inv.amount}</td>
-                                            <td><StatusPill status={inv.status} /></td>
-                                        </tr>
-                                    ))}
-                                </tbody>
-                            </table>
-                        ) : (
-                            <div className="qp-placeholder-block">No invoice history — connect the invoices API to populate this section.</div>
-                        )}
-                    </>
-                )}
-
-                {section === 'payments' && (
-                    <>
-                        <BackendNotice message="Connect GET /api/subscriptions/:id/payments to load payment history." />
-                        {subscription.payments.length > 0 ? (
-                            <table className="qp-table" aria-label="Payment history">
-                                <thead>
-                                    <tr>
-                                        <th>Reference</th>
-                                        <th>Date</th>
-                                        <th>Amount</th>
-                                        <th>Method</th>
-                                        <th>Status</th>
-                                    </tr>
-                                </thead>
-                                <tbody>
-                                    {subscription.payments.map(pay => (
-                                        <tr key={pay.ref}>
-                                            <td className="font-mono">{pay.ref}</td>
-                                            <td>{pay.date}</td>
-                                            <td className="qp-total-cell">{pay.amount}</td>
-                                            <td>{pay.method}</td>
-                                            <td><StatusPill status={pay.status} /></td>
-                                        </tr>
-                                    ))}
-                                </tbody>
-                            </table>
-                        ) : (
-                            <div className="qp-placeholder-block">No payment history — connect the payments API to populate this section.</div>
-                        )}
-                    </>
-                )}
-
-                {section === 'activity' && (
-                    <>
-                        <BackendNotice message="Connect GET /api/subscriptions/:id/activity to load the activity log." />
-                        {subscription.activity.length > 0 ? (
-                            <ul className="sp-activity-list">
-                                {subscription.activity.map((item, idx) => (
-                                    <li key={idx} className="sp-activity-item">
-                                        <span className="sp-activity-dot" />
-                                        <span className="sp-activity-date">{item.date}</span>
-                                        <span className="sp-activity-event">{item.event}</span>
-                                    </li>
-                                ))}
-                            </ul>
-                        ) : (
-                            <div className="qp-placeholder-block">No activity recorded — connect the activity API to populate this section.</div>
-                        )}
-                    </>
-                )}
-            </div>
-        </div>
-    );
-}
-
-// ─── Subscription list view ────────────────────────────────────────────────────
-function SubscriptionListView({ onOpenDetail }) {
-    const [search, setSearch] = useState('');
-    const [statusFilter, setStatusFilter] = useState('All');
-    const [page, setPage] = useState(1);
-    const [modal, setModal] = useState(null);
-    const PER_PAGE = 6;
-
-    const statuses = ['All', 'Active', 'Paused', 'Expired', 'Cancelled'];
-
-    const filtered = SAMPLE_SUBSCRIPTIONS.filter(s => {
-        const matchSearch = s.id.toLowerCase().includes(search.toLowerCase()) ||
-            s.customer.toLowerCase().includes(search.toLowerCase());
-        const matchStatus = statusFilter === 'All' || s.status === statusFilter;
-        return matchSearch && matchStatus;
-    });
-    const totalPages = Math.max(1, Math.ceil(filtered.length / PER_PAGE));
-    const paged = filtered.slice((page - 1) * PER_PAGE, page * PER_PAGE);
-
-    function openModal(type, data = null) { setModal({ type, data }); }
-    function closeModal() { setModal(null); }
-
-    const stats = {
-        active: SAMPLE_SUBSCRIPTIONS.filter(s => s.status === 'Active').length,
-        paused: SAMPLE_SUBSCRIPTIONS.filter(s => s.status === 'Paused').length,
-        expired: SAMPLE_SUBSCRIPTIONS.filter(s => s.status === 'Expired').length,
-        cancelled: SAMPLE_SUBSCRIPTIONS.filter(s => s.status === 'Cancelled').length,
-    };
-
-    return (
-        <div className="qp-tab-content">
-            <BackendNotice message="All subscription data is static for UI demonstration. Connect GET /api/subscriptions to load live records." />
-
-            {/* Quick stats */}
-            <div className="sp-quick-stats">
-                {[
-                    { label: 'Active', count: stats.active, color: 'emerald' },
-                    { label: 'Paused', count: stats.paused, color: 'amber' },
-                    { label: 'Expired', count: stats.expired, color: 'slate' },
-                    { label: 'Cancelled', count: stats.cancelled, color: 'rose' },
-                ].map(s => (
-                    <button
-                        key={s.label}
-                        className={`sp-stat-card sp-stat-${s.color}${statusFilter === s.label ? ' sp-stat-active' : ''}`}
-                        onClick={() => { setStatusFilter(sf => sf === s.label ? 'All' : s.label); setPage(1); }}
-                        type="button"
-                        aria-pressed={statusFilter === s.label}
-                    >
-                        <span className="sp-stat-count">{s.count}</span>
-                        <span className="sp-stat-label">{s.label}</span>
-                    </button>
-                ))}
-            </div>
-
-            {/* Toolbar */}
-            <div className="qp-toolbar">
-                <div className="qp-toolbar-left">
-                    <div className="qp-search-wrap">
-                        <SIcon name="search" size={15} />
-                        <input
-                            id="subscriptions-search"
-                            className="qp-search-input"
-                            type="search"
-                            placeholder="Search by ID or customer…"
-                            value={search}
-                            onChange={e => { setSearch(e.target.value); setPage(1); }}
-                            aria-label="Search subscriptions"
-                        />
-                    </div>
-                    <div className="qp-filter-tabs" role="tablist" aria-label="Filter by status">
-                        {statuses.map(s => (
+                          {s.status === 'paused' && (
                             <button
-                                key={s}
-                                role="tab"
-                                aria-selected={statusFilter === s}
-                                className={`qp-filter-tab${statusFilter === s ? ' active' : ''}`}
-                                onClick={() => { setStatusFilter(s); setPage(1); }}
-                                type="button"
-                            >{s}</button>
-                        ))}
-                    </div>
-                </div>
-                <button
-                    id="create-subscription-btn"
-                    className="qp-btn qp-btn-primary"
+                              type="button"
+                              className="action-btn-icon text-emerald"
+                              title="Resume subscription"
+                              onClick={() => handleToggleStatus(s, 'active')}
+                            >
+                              <AdminIcon name="check" size={15} />
+                            </button>
+                          )}
+
+                          <button
+                            type="button"
+                            className="action-btn-icon text-danger"
+                            title="Delete subscription"
+                            onClick={() => {
+                              setDeleteTarget(s);
+                              setModalMode('delete');
+                            }}
+                          >
+                            <AdminIcon name="trash" size={15} />
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
+
+        {/* Pagination Bar */}
+        {meta.total_pages > 1 && (
+          <div className="pagination-bar">
+            <div className="pagination-info">
+              Showing {(meta.page - 1) * meta.limit + 1} to{' '}
+              {Math.min(meta.page * meta.limit, meta.total)} of {meta.total} subscriptions
+            </div>
+
+            <div className="pagination-controls">
+              <button
+                type="button"
+                className="page-nav-btn"
+                disabled={currentPage === 1}
+                onClick={() => setCurrentPage((p) => p - 1)}
+              >
+                Previous
+              </button>
+
+              <div className="page-numbers">
+                {Array.from({ length: meta.total_pages }, (_, i) => i + 1).map((pageNum) => (
+                  <button
+                    key={pageNum}
                     type="button"
-                    onClick={() => openModal('create')}
-                >
-                    <SIcon name="plus" size={15} /> Create Subscription
+                    className={`page-num-btn ${currentPage === pageNum ? 'active' : ''}`}
+                    onClick={() => setCurrentPage(pageNum)}
+                  >
+                    {pageNum}
+                  </button>
+                ))}
+              </div>
+
+              <button
+                type="button"
+                className="page-nav-btn"
+                disabled={currentPage === meta.total_pages}
+                onClick={() => setCurrentPage((p) => p + 1)}
+              >
+                Next
+              </button>
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* Create / Edit Subscription Modal */}
+      {(modalMode === 'create' || modalMode === 'edit') && (
+        <SubscriptionFormModal
+          subscriptionId={modalMode === 'edit' ? editTargetId : null}
+          onClose={() => setModalMode(null)}
+          onSuccess={() => {
+            setModalMode(null);
+            fetchSubscriptions();
+            setSuccessToast(modalMode === 'edit' ? 'Subscription updated successfully.' : 'Subscription created successfully.');
+          }}
+        />
+      )}
+
+      {/* Delete Confirmation Modal */}
+      {modalMode === 'delete' && deleteTarget && (
+        <div
+          className="admin-modal-overlay"
+          role="dialog"
+          aria-modal="true"
+          onMouseDown={(e) => e.target === e.currentTarget && setModalMode(null)}
+        >
+          <div className="admin-modal-card modal-sm">
+            <div className="modal-header">
+              <div className="modal-title-wrap">
+                <h2 className="modal-title">Delete Subscription</h2>
+              </div>
+              <button type="button" className="modal-close-btn" onClick={() => setModalMode(null)}>×</button>
+            </div>
+
+            <div className="modal-form-body">
+              <p style={{ fontSize: '0.9rem', color: 'var(--text-secondary)' }}>
+                Are you sure you want to permanently delete subscription <strong>"{deleteTarget.subscription_number}"</strong>?
+                This action cannot be undone.
+              </p>
+
+              <div className="modal-form-actions" style={{ marginTop: '20px' }}>
+                <button type="button" className="btn-secondary" onClick={() => setModalMode(null)}>
+                  Cancel
                 </button>
+                <button type="button" className="btn-danger-action" onClick={handleDelete}>
+                  Delete Subscription
+                </button>
+              </div>
             </div>
-
-            {/* Table */}
-            <div className="qp-table-wrap">
-                <table className="qp-table" aria-label="Subscriptions list">
-                    <thead>
-                        <tr>
-                            <th>Subscription No.</th>
-                            <th>Customer</th>
-                            <th>Start Date</th>
-                            <th>Expiry Date</th>
-                            <th>Billing</th>
-                            <th style={{ textAlign: 'center' }}>Items</th>
-                            <th>Total</th>
-                            <th>Next Billing</th>
-                            <th>Status</th>
-                            <th style={{ textAlign: 'center' }}>Actions</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        {paged.length === 0 ? (
-                            <tr>
-                                <td colSpan={10} className="qp-empty-row">No subscriptions match your search.</td>
-                            </tr>
-                        ) : paged.map(s => (
-                            <tr key={s.id}>
-                                <td>
-                                    <span
-                                        className="font-mono qp-id-link"
-                                        onClick={() => onOpenDetail(s)}
-                                        role="button"
-                                        tabIndex={0}
-                                        onKeyDown={e => e.key === 'Enter' && onOpenDetail(s)}
-                                        aria-label={`View ${s.id}`}
-                                    >{s.id}</span>
-                                </td>
-                                <td className="qp-customer-cell">{s.customer}</td>
-                                <td>{s.startDate}</td>
-                                <td>{s.expiryDate}</td>
-                                <td>{s.billing}</td>
-                                <td style={{ textAlign: 'center' }}>{s.items}</td>
-                                <td className="qp-total-cell">{s.total}</td>
-                                <td>{s.nextBilling}</td>
-                                <td><StatusPill status={s.status} /></td>
-                                <td style={{ textAlign: 'center' }}>
-                                    <ActionMenu items={[
-                                        { label: 'View Details', icon: 'eye', onClick: () => onOpenDetail(s) },
-                                        { label: 'Edit', icon: 'edit', onClick: () => openModal('edit', s) },
-                                        ...(s.status === 'Active' ? [{ label: 'Pause', icon: 'pause', onClick: () => openModal('pause', s) }] : []),
-                                        ...(s.status === 'Paused' ? [{ label: 'Resume', icon: 'play', onClick: () => openModal('resume', s) }] : []),
-                                        ...(s.status !== 'Cancelled' && s.status !== 'Expired' ? [
-                                            { label: 'Renew', icon: 'refresh', onClick: () => openModal('renew', s) },
-                                            { label: 'Close', icon: 'close', danger: true, onClick: () => openModal('close', s) },
-                                        ] : []),
-                                    ]} />
-                                </td>
-                            </tr>
-                        ))}
-                    </tbody>
-                </table>
-            </div>
-
-            {/* Pagination */}
-            {totalPages > 1 && (
-                <div className="qp-pagination" aria-label="Pagination">
-                    <span className="qp-page-info">{filtered.length} record{filtered.length !== 1 ? 's' : ''}</span>
-                    <div className="qp-page-controls">
-                        <button className="qp-page-btn" disabled={page === 1} onClick={() => setPage(p => p - 1)} aria-label="Previous page" type="button">
-                            <SIcon name="chevLeft" size={14} />
-                        </button>
-                        {Array.from({ length: totalPages }, (_, i) => i + 1).map(n => (
-                            <button
-                                key={n}
-                                className={`qp-page-btn${n === page ? ' active' : ''}`}
-                                onClick={() => setPage(n)}
-                                aria-current={n === page ? 'page' : undefined}
-                                type="button"
-                            >{n}</button>
-                        ))}
-                        <button className="qp-page-btn" disabled={page === totalPages} onClick={() => setPage(p => p + 1)} aria-label="Next page" type="button">
-                            <SIcon name="chevRight" size={14} />
-                        </button>
-                    </div>
-                </div>
-            )}
-
-            {/* Modals */}
-            {modal?.type === 'create' && <SubscriptionFormModal subscription={null} onClose={closeModal} />}
-            {modal?.type === 'edit' && <SubscriptionFormModal subscription={modal.data} onClose={closeModal} />}
-            {modal?.type === 'pause' && (
-                <ConfirmModal
-                    title="Pause Subscription"
-                    message={`Pausing ${modal.data?.id} will halt future billing until the subscription is resumed.`}
-                    endpoint={`PATCH /api/subscriptions/${modal.data?.id}/pause`}
-                    onClose={closeModal}
-                />
-            )}
-            {modal?.type === 'resume' && (
-                <ConfirmModal
-                    title="Resume Subscription"
-                    message={`Resuming ${modal.data?.id} will restart the billing cycle from the next billing date.`}
-                    endpoint={`PATCH /api/subscriptions/${modal.data?.id}/resume`}
-                    onClose={closeModal}
-                />
-            )}
-            {modal?.type === 'renew' && (
-                <ConfirmModal
-                    title="Renew Subscription"
-                    message={`Renewing ${modal.data?.id} will extend the subscription period for another billing cycle.`}
-                    endpoint={`POST /api/subscriptions/${modal.data?.id}/renew`}
-                    onClose={closeModal}
-                />
-            )}
-            {modal?.type === 'close' && (
-                <ConfirmModal
-                    title="Close Subscription"
-                    message={`Closing ${modal.data?.id} will permanently cancel it. This cannot be undone.`}
-                    endpoint={`PATCH /api/subscriptions/${modal.data?.id}/close`}
-                    onClose={closeModal}
-                    danger
-                />
-            )}
+          </div>
         </div>
-    );
+      )}
+    </div>
+  );
 }
 
-// ─── Main page ─────────────────────────────────────────────────────────────────
-export function SubscriptionsPage() {
-    const [detailSub, setDetailSub] = useState(null);
-    const [editModal, setEditModal] = useState(false);
+// ─── Subscription Form Modal ───────────────────────────────────────────────────
+function SubscriptionFormModal({ subscriptionId, onClose, onSuccess }) {
+  const [customers, setCustomers] = useState([]);
+  const [products, setProducts] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState(null);
 
-    if (detailSub) {
-        return (
-            <div id="subscriptions-page" className="qp-page">
-                <SubscriptionDetailView
-                    subscription={detailSub}
-                    onBack={() => setDetailSub(null)}
-                    onEdit={() => setEditModal(true)}
-                />
-                {editModal && (
-                    <SubscriptionFormModal
-                        subscription={detailSub}
-                        onClose={() => setEditModal(false)}
-                    />
-                )}
-            </div>
-        );
+  const [customerId, setCustomerId] = useState('');
+  const [startDate, setStartDate] = useState(new Date().toISOString().split('T')[0]);
+  const [expiryDate, setExpiryDate] = useState(() => {
+    const d = new Date();
+    d.setFullYear(d.getFullYear() + 1);
+    return d.toISOString().split('T')[0];
+  });
+  const [billingFrequency, setBillingFrequency] = useState('monthly');
+  const [paymentTerms, setPaymentTerms] = useState('Net 30');
+  const [notes, setNotes] = useState('');
+  const [status, setStatus] = useState('active');
+  const [items, setItems] = useState([]);
+
+  useEffect(() => {
+    async function load() {
+      try {
+        setLoading(true);
+        const [custRes, prodRes] = await Promise.all([
+          peopleApi.getCustomers({ limit: 100 }),
+          fetch('http://localhost:5000/api/products?limit=100').then((r) => r.json()).catch(() => ({ data: [] }))
+        ]);
+
+        setCustomers(custRes.data || []);
+        setProducts(prodRes.data || []);
+
+        if (subscriptionId) {
+          const res = await subscriptionsApi.getSubscriptionById(subscriptionId);
+          const s = res.data;
+          setCustomerId(s.customer_id);
+          setStartDate(s.start_date);
+          setExpiryDate(s.expiry_date || '');
+          setBillingFrequency(s.billing_frequency || 'monthly');
+          setPaymentTerms(s.payment_terms || 'Net 30');
+          setNotes(s.notes || '');
+          setStatus(s.status || 'active');
+          setItems(s.items || []);
+        } else {
+          if (prodRes.data && prodRes.data.length > 0) {
+            const p0 = prodRes.data[0];
+            setItems([{
+              product_id: p0.id,
+              product_name: p0.name,
+              billing_frequency: 'monthly',
+              quantity: 1,
+              unit_price: p0.sales_price || 0,
+              tax_rate: 18,
+              discount_type: 'fixed',
+              discount_value: 0
+            }]);
+          }
+        }
+      } catch (err) {
+        setError(err.message || 'Failed to load options.');
+      } finally {
+        setLoading(false);
+      }
+    }
+    load();
+  }, [subscriptionId]);
+
+  function handleProductChange(idx, prodId) {
+    const p = products.find((x) => x.id === prodId);
+    if (!p) return;
+    const newItems = [...items];
+    newItems[idx] = {
+      ...newItems[idx],
+      product_id: p.id,
+      product_name: p.name,
+      unit_price: p.sales_price || 0
+    };
+    setItems(newItems);
+  }
+
+  function handleItemChange(idx, field, val) {
+    const newItems = [...items];
+    newItems[idx] = { ...newItems[idx], [field]: val };
+    setItems(newItems);
+  }
+
+  function addItem() {
+    const p0 = products[0] || {};
+    setItems([...items, {
+      product_id: p0.id || null,
+      product_name: p0.name || 'Product',
+      billing_frequency: billingFrequency,
+      quantity: 1,
+      unit_price: p0.sales_price || 0,
+      tax_rate: 18,
+      discount_type: 'fixed',
+      discount_value: 0
+    }]);
+  }
+
+  function removeItem(idx) {
+    if (items.length <= 1) return;
+    setItems(items.filter((_, i) => i !== idx));
+  }
+
+  const calculatedSubtotal = items.reduce((sum, it) => sum + (parseFloat(it.quantity) || 0) * (parseFloat(it.unit_price) || 0), 0);
+  const calculatedDiscount = items.reduce((sum, it) => {
+    const base = (parseFloat(it.quantity) || 0) * (parseFloat(it.unit_price) || 0);
+    const dVal = parseFloat(it.discount_value) || 0;
+    return sum + (it.discount_type === 'percentage' ? (base * Math.min(100, dVal)) / 100 : Math.min(base, dVal));
+  }, 0);
+  const calculatedTax = items.reduce((sum, it) => {
+    const base = (parseFloat(it.quantity) || 0) * (parseFloat(it.unit_price) || 0);
+    const dVal = parseFloat(it.discount_value) || 0;
+    const disc = it.discount_type === 'percentage' ? (base * Math.min(100, dVal)) / 100 : Math.min(base, dVal);
+    const rate = parseFloat(it.tax_rate) || 0;
+    return sum + ((Math.max(0, base - disc) * rate) / 100);
+  }, 0);
+  const calculatedTotal = Math.max(0, calculatedSubtotal - calculatedDiscount + calculatedTax);
+
+  async function handleSubmit(e) {
+    e.preventDefault();
+    setError(null);
+    if (!customerId) {
+      setError('Please select a customer.');
+      return;
+    }
+    if (items.length === 0) {
+      setError('Please add at least one subscription item.');
+      return;
     }
 
-    return (
-        <div id="subscriptions-page" className="qp-page">
-            <SubscriptionListView onOpenDetail={s => setDetailSub(s)} />
+    try {
+      setSaving(true);
+      const payload = {
+        customer_id: customerId,
+        start_date: startDate,
+        expiry_date: expiryDate || null,
+        billing_frequency: billingFrequency,
+        payment_terms: paymentTerms,
+        notes,
+        status,
+        items
+      };
+
+      if (subscriptionId) {
+        await subscriptionsApi.updateSubscription(subscriptionId, payload);
+      } else {
+        await subscriptionsApi.createSubscription(payload);
+      }
+      onSuccess();
+    } catch (err) {
+      setError(err.message || 'Failed to save subscription.');
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <div
+      className="admin-modal-overlay"
+      role="dialog"
+      aria-modal="true"
+      onMouseDown={(e) => e.target === e.currentTarget && onClose()}
+    >
+      <div className="admin-modal-card modal-lg">
+        <div className="modal-header">
+          <div className="modal-title-wrap">
+            <h2 className="modal-title">{subscriptionId ? 'Edit Subscription' : 'New Subscription'}</h2>
+            <span className="modal-subtitle">Provision recurring software access and contract terms.</span>
+          </div>
+          <button type="button" className="modal-close-btn" onClick={onClose}>×</button>
         </div>
-    );
+
+        {error && (
+          <div className="product-alert alert-error" style={{ margin: '16px 24px 0' }}>
+            <span className="alert-icon">⚠️</span>
+            <span className="alert-message">{error}</span>
+          </div>
+        )}
+
+        <form onSubmit={handleSubmit} className="modal-form-body">
+          <div className="form-grid-2col">
+            <div className="form-group required">
+              <label htmlFor="sub-customer">Customer</label>
+              <select
+                id="sub-customer"
+                required
+                value={customerId}
+                onChange={(e) => setCustomerId(e.target.value)}
+              >
+                <option value="">Select customer...</option>
+                {customers.map((c) => {
+                  const name = [c.first_name, c.last_name].filter(Boolean).join(' ') || c.business_name;
+                  return (
+                    <option key={c.id} value={c.id}>
+                      {name} {c.business_name && name !== c.business_name ? `(${c.business_name})` : ''} — {c.email}
+                    </option>
+                  );
+                })}
+              </select>
+            </div>
+
+            <div className="form-group required">
+              <label htmlFor="sub-frequency">Billing Frequency</label>
+              <select
+                id="sub-frequency"
+                required
+                value={billingFrequency}
+                onChange={(e) => setBillingFrequency(e.target.value)}
+              >
+                <option value="monthly">Monthly</option>
+                <option value="yearly">Yearly</option>
+                <option value="weekly">Weekly</option>
+                <option value="daily">Daily</option>
+              </select>
+            </div>
+          </div>
+
+          <div className="form-grid-3col">
+            <div className="form-group required">
+              <label htmlFor="sub-start">Start Date</label>
+              <input
+                id="sub-start"
+                type="date"
+                required
+                value={startDate}
+                onChange={(e) => setStartDate(e.target.value)}
+              />
+            </div>
+
+            <div className="form-group">
+              <label htmlFor="sub-expiry">Expiry Date</label>
+              <input
+                id="sub-expiry"
+                type="date"
+                min={startDate}
+                value={expiryDate}
+                onChange={(e) => setExpiryDate(e.target.value)}
+              />
+            </div>
+
+            <div className="form-group">
+              <label htmlFor="sub-terms">Payment Terms</label>
+              <select
+                id="sub-terms"
+                value={paymentTerms}
+                onChange={(e) => setPaymentTerms(e.target.value)}
+              >
+                <option value="Net 30">Net 30</option>
+                <option value="Net 15">Net 15</option>
+                <option value="Advance">Advance</option>
+                <option value="Due on Receipt">Due on Receipt</option>
+              </select>
+            </div>
+          </div>
+
+          {/* Line Items */}
+          <div style={{ marginTop: '16px' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+              <label style={{ fontWeight: 700, fontSize: '0.85rem' }}>Subscription Items</label>
+              <button type="button" className="btn-secondary" style={{ padding: '4px 10px', fontSize: '0.8rem' }} onClick={addItem}>
+                + Add Item
+              </button>
+            </div>
+
+            <div className="table-responsive" style={{ border: '1px solid var(--admin-border-subtle)', borderRadius: '6px' }}>
+              <table className="products-data-table" style={{ fontSize: '0.82rem' }}>
+                <thead>
+                  <tr>
+                    <th>Product</th>
+                    <th style={{ width: '80px' }}>Qty</th>
+                    <th style={{ width: '110px' }}>Price (₹)</th>
+                    <th style={{ width: '75px' }}>Tax (%)</th>
+                    <th style={{ width: '90px' }}>Disc Value</th>
+                    <th style={{ width: '90px' }}>Disc Type</th>
+                    <th style={{ width: '35px' }}></th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {items.map((it, idx) => (
+                    <tr key={idx}>
+                      <td>
+                        <select
+                          value={it.product_id || ''}
+                          onChange={(e) => handleProductChange(idx, e.target.value)}
+                          style={{ width: '100%', padding: '4px', fontSize: '0.8rem' }}
+                        >
+                          <option value="">Select product...</option>
+                          {products.map((p) => (
+                            <option key={p.id} value={p.id}>{p.name} (₹{p.sales_price})</option>
+                          ))}
+                        </select>
+                      </td>
+                      <td>
+                        <input
+                          type="number"
+                          min="1"
+                          value={it.quantity}
+                          onChange={(e) => handleItemChange(idx, 'quantity', e.target.value)}
+                          style={{ width: '100%', padding: '4px', fontSize: '0.8rem' }}
+                        />
+                      </td>
+                      <td>
+                        <input
+                          type="number"
+                          step="0.01"
+                          min="0"
+                          value={it.unit_price}
+                          onChange={(e) => handleItemChange(idx, 'unit_price', e.target.value)}
+                          style={{ width: '100%', padding: '4px', fontSize: '0.8rem' }}
+                        />
+                      </td>
+                      <td>
+                        <input
+                          type="number"
+                          min="0"
+                          max="100"
+                          value={it.tax_rate}
+                          onChange={(e) => handleItemChange(idx, 'tax_rate', e.target.value)}
+                          style={{ width: '100%', padding: '4px', fontSize: '0.8rem' }}
+                        />
+                      </td>
+                      <td>
+                        <input
+                          type="number"
+                          step="0.01"
+                          min="0"
+                          value={it.discount_value}
+                          onChange={(e) => handleItemChange(idx, 'discount_value', e.target.value)}
+                          style={{ width: '100%', padding: '4px', fontSize: '0.8rem' }}
+                        />
+                      </td>
+                      <td>
+                        <select
+                          value={it.discount_type || 'fixed'}
+                          onChange={(e) => handleItemChange(idx, 'discount_type', e.target.value)}
+                          style={{ width: '100%', padding: '4px', fontSize: '0.8rem' }}
+                        >
+                          <option value="fixed">Fixed</option>
+                          <option value="percentage">%</option>
+                        </select>
+                      </td>
+                      <td>
+                        <button
+                          type="button"
+                          onClick={() => removeItem(idx)}
+                          disabled={items.length <= 1}
+                          style={{ background: 'none', border: 'none', color: 'var(--color-danger)', cursor: 'pointer' }}
+                        >
+                          ✕
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          {/* Pricing Totals Box */}
+          <div style={{
+            background: 'var(--admin-bg-subtle)',
+            borderRadius: '6px',
+            padding: '12px 16px',
+            marginTop: '12px',
+            display: 'flex',
+            justifyContent: 'flex-end',
+            gap: '20px',
+            fontSize: '0.85rem'
+          }}>
+            <div>Subtotal: <strong>{formatCurrency(calculatedSubtotal)}</strong></div>
+            <div>Discount: <strong className="text-danger">-{formatCurrency(calculatedDiscount)}</strong></div>
+            <div>Tax (GST): <strong>+{formatCurrency(calculatedTax)}</strong></div>
+            <div style={{ fontSize: '1rem', color: 'var(--admin-blue)', fontWeight: 700 }}>
+              Total: {formatCurrency(calculatedTotal)}
+            </div>
+          </div>
+
+          <div className="form-group" style={{ marginTop: '12px' }}>
+            <label htmlFor="sub-notes">Internal Account Notes</label>
+            <textarea
+              id="sub-notes"
+              rows={2}
+              placeholder="Terms, operational specifics, client SLA..."
+              value={notes}
+              onChange={(e) => setNotes(e.target.value)}
+            />
+          </div>
+
+          <div className="modal-form-actions" style={{ marginTop: '20px' }}>
+            <button type="button" className="btn-secondary" onClick={onClose} disabled={saving}>
+              Cancel
+            </button>
+            <button type="submit" className="btn-primary-action" disabled={saving}>
+              {saving ? 'Saving...' : (subscriptionId ? 'Save Changes' : 'Create Subscription')}
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  );
 }
