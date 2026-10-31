@@ -3,8 +3,60 @@ generator client {
 }
 
 datasource db {
-  provider = "postgresql"
-  url      = env("DATABASE_URL")
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+model admin {
+  id          String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  auth_id     String   @unique @db.Uuid
+  first_name  String   @db.VarChar(100)
+  last_name   String?  @db.VarChar(100)
+  phone       String?  @db.VarChar(20)
+  designation String?  @db.VarChar(100)
+  created_at  DateTime @default(now()) @db.Timestamptz(6)
+  updated_at  DateTime @default(now()) @db.Timestamptz(6)
+  auth        auth     @relation(fields: [auth_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@index([auth_id], map: "idx_admin_auth_id")
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model auth {
+  id             String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  email          String   @unique @db.VarChar(255)
+  password_hash  String
+  role           String   @db.VarChar(20)
+  is_active      Boolean  @default(true)
+  email_verified Boolean  @default(false)
+  created_at     DateTime @default(now()) @db.Timestamptz(6)
+  updated_at     DateTime @default(now()) @db.Timestamptz(6)
+  admin          admin?
+  users          users?
+
+  @@index([role], map: "idx_auth_role")
+}
+
+model users {
+  id            String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  auth_id       String   @unique @db.Uuid
+  first_name    String   @db.VarChar(100)
+  last_name     String?  @db.VarChar(100)
+  business_name String?  @db.VarChar(200)
+  business_type String?  @db.VarChar(100)
+  phone         String?  @db.VarChar(20)
+  address       String?
+  city          String?  @db.VarChar(100)
+  state         String?  @db.VarChar(100)
+  country       String?  @db.VarChar(100)
+  postal_code   String?  @db.VarChar(20)
+  created_at    DateTime @default(now()) @db.Timestamptz(6)
+  updated_at    DateTime @default(now()) @db.Timestamptz(6)
+  auth          auth     @relation(fields: [auth_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@index([auth_id], map: "idx_users_auth_id")
+  @@index([business_name], map: "idx_users_business_name")
 }
 
 model admin {
