@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { AdminLayout } from './admin/AdminLayout';
+import { CustomerPortalLayout } from './customer-portal/CustomerPortalLayout';
 
 const products = [
   {
@@ -219,7 +220,7 @@ export default function App() {
   };
 
   useEffect(() => {
-    if (!currentPath.startsWith('/admin')) {
+    if (!currentPath.startsWith('/admin') && !currentPath.startsWith('/portal')) {
       const title =
         currentPath === '/login'
           ? 'Sign in | Brightloop'
@@ -234,6 +235,10 @@ export default function App() {
 
   if (currentPath.startsWith('/admin')) {
     return <AdminLayout currentPath={currentPath} onNavigate={navigate} />;
+  }
+
+  if (currentPath.startsWith('/portal')) {
+    return <CustomerPortalLayout currentPath={currentPath} onNavigate={navigate} />;
   }
 
   if (currentPath === '/login') return <LoginPage />;
