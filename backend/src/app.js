@@ -15,6 +15,10 @@ app.get('/api/health', (req, res) => {
   res.status(200).json({ status: 'ok', message: 'Backend service is healthy' });
 });
 
+// Products Module API
+const productRoutes = require('./modules/products/products.routes');
+app.use('/api/products', productRoutes);
+
 // Global Error Handler
 app.use(errorHandler);
 
