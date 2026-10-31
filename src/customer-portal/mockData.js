@@ -282,7 +282,7 @@ export const MY_SUBSCRIPTIONS = [
     addOns: [
       { id: 'addon-flow-1', name: 'WhatsApp Business API Gateway', price: 450, period: '/ month', active: true, description: 'Direct customer message sending from leads' },
       { id: 'addon-flow-2', name: 'AI Sales Email Drafter', price: 350, period: '/ month', active: true, description: 'AI-assisted reply recommendations' },
-      { id: 'addon-flow-3', name: 'Custom Domain White-labeling', price: 750, period: '/ month', active: false, description: 'Host portal on your own domain (crm.novalabs.in)' }
+      { id: 'addon-flow-3', name: 'Custom Domain White-labeling', price: 750, period: '/ month', active: false, description: 'Host portal on your own company domain (e.g. crm.yourcompany.com)' }
     ]
   },
   {
@@ -496,7 +496,7 @@ export const MY_PAYMENTS = [
     id: 'PAY-2026-871',
     amount: '₹7,664.10',
     date: '03 Sep 2026, 14:15 IST',
-    method: 'Razorpay UPI (novalabs@okhdfcbank)',
+    method: 'Corporate UPI (Instant Settlement)',
     relatedInvoice: 'INV-2026-068',
     gatewayRef: 'UPI_RZP_78210398',
     status: 'Paid'
@@ -505,7 +505,7 @@ export const MY_PAYMENTS = [
     id: 'PAY-2026-810',
     amount: '₹7,664.10',
     date: '02 Aug 2026, 16:40 IST',
-    method: 'Razorpay UPI (novalabs@okhdfcbank)',
+    method: 'Corporate UPI (Instant Settlement)',
     relatedInvoice: 'INV-2026-054',
     gatewayRef: 'UPI_RZP_65192837',
     status: 'Paid'

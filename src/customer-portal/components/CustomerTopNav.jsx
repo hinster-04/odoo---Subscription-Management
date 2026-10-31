@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { AdminIcon } from '../../admin/AdminIcons';
 import { Breadcrumbs } from '../../admin/components/Breadcrumbs';
 import { CURRENT_CUSTOMER } from '../mockData';
+import { useAuth } from '../../context/AuthContext.jsx';
 
 export function CustomerTopNav({
   pageTitle,
@@ -11,6 +12,7 @@ export function CustomerTopNav({
   isSidebarCollapsed,
   onToggleCollapse
 }) {
+  const { user } = useAuth();
   const [showNotificationToast, setShowNotificationToast] = useState(false);
 
   return (
@@ -92,25 +94,36 @@ export function CustomerTopNav({
         </div>
 
         {/* User Avatar Pill */}
-        <div
-          className="customer-user-avatar-pill"
-          onClick={() => onNavigate && onNavigate('/portal/my-account')}
-          title="View My Account"
-          role="button"
-          tabIndex={0}
-        >
-          <div className="customer-avatar-circle">
-            {CURRENT_CUSTOMER.first_name[0]}{CURRENT_CUSTOMER.last_name[0]}
-          </div>
-          <div className="customer-avatar-details">
-            <span className="customer-avatar-name">
-              {CURRENT_CUSTOMER.first_name} {CURRENT_CUSTOMER.last_name}
-            </span>
-            <span className="customer-avatar-sub">
-              {CURRENT_CUSTOMER.business_name}
-            </span>
-          </div>
-        </div>
+        {(() => {
+          const customer = user || CURRENT_CUSTOMER;
+          const firstName = customer.firstName || customer.first_name || 'Customer';
+          const lastName = customer.lastName || customer.last_name || '';
+          const fullName = customer.name || [firstName, lastName].filter(Boolean).join(' ') || 'Customer';
+          const businessName = customer.businessName || customer.business_name || 'My Account';
+          const initials = ((firstName[0] || 'C') + (lastName[0] || '')).toUpperCase();
+
+          return (
+            <div
+              className="customer-user-avatar-pill"
+              onClick={() => onNavigate && onNavigate('/portal/my-account')}
+              title="View My Account"
+              role="button"
+              tabIndex={0}
+            >
+              <div className="customer-avatar-circle">
+                {initials}
+              </div>
+              <div className="customer-avatar-details">
+                <span className="customer-avatar-name">
+                  {fullName}
+                </span>
+                <span className="customer-avatar-sub">
+                  {businessName}
+                </span>
+              </div>
+            </div>
+          );
+        })()}
       </div>
     </header>
   );

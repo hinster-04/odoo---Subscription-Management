@@ -2,8 +2,10 @@ import React, { useState } from 'react';
 import { MY_INVOICES } from '../mockData';
 import { StatusBadge } from '../components/StatusBadge';
 import { AdminIcon } from '../../admin/AdminIcons';
+import { useAuth } from '../../context/AuthContext.jsx';
 
 export function MyInvoicesPage({ onNavigate }) {
+  const { user } = useAuth();
   const [invoices, setInvoices] = useState(MY_INVOICES);
   const [filterStatus, setFilterStatus] = useState('all');
   const [toastMessage, setToastMessage] = useState('');
@@ -87,7 +89,7 @@ export function MyInvoicesPage({ onNavigate }) {
         <div className="portal-card-header">
           <div>
             <h3>Invoice Ledger</h3>
-            <p>Showing {filteredInvoices.length} billing document{filteredInvoices.length === 1 ? '' : 's'}</p>
+            <p>Showing {filteredInvoices.length} billing document{filteredInvoices.length === 1 ? '' : 's'}{user?.business_name ? ` for ${user.business_name}` : ''}</p>
           </div>
         </div>
 

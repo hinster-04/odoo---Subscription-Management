@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { AdminLayout } from './admin/AdminLayout';
 import { CustomerPortalLayout } from './customer-portal/CustomerPortalLayout';
+import { useAuth } from './context/AuthContext.jsx';
 
 const products = [
   {
@@ -176,22 +177,420 @@ function AuthMessage({ children, type = 'info' }) {
   return <div className={`form-message message-${type}`} role="status">{children}</div>;
 }
 
-function PasswordInput({ label = 'Password', value, onChange, placeholder = 'Enter your password', autoComplete = 'current-password', showRequirements = false }) {
+function PasswordInput({
+  label = 'Password',
+  value,
+  onChange,
+  placeholder = 'Enter your password',
+  autoComplete = 'current-password',
+  showRequirements = false,
+  disabled = false
+}) {
   const [visible, setVisible] = useState(false);
-  return <div className="field"><label>{label}</label><div className="password-wrap"><input type={visible ? 'text' : 'password'} value={value} onChange={onChange} placeholder={placeholder} autoComplete={autoComplete} required /><button type="button" className="password-toggle" onClick={() => setVisible(!visible)} aria-label={visible ? 'Hide password' : 'Show password'}><Icon name={visible ? 'eyeOff' : 'eye'} size={18} /></button></div>{showRequirements && <div className="password-hint">Use more than 8 characters, including uppercase, lowercase and a special character.</div>}</div>;
+  return (
+    <div className="field">
+      <label>{label}</label>
+      <div className="password-wrap">
+        <input
+          type={visible ? 'text' : 'password'}
+          value={value}
+          onChange={onChange}
+          placeholder={placeholder}
+          autoComplete={autoComplete}
+          disabled={disabled}
+          required
+        />
+        <button
+          type="button"
+          className="password-toggle"
+          onClick={() => setVisible(!visible)}
+          aria-label={visible ? 'Hide password' : 'Show password'}
+          disabled={disabled}
+        >
+          <Icon name={visible ? 'eyeOff' : 'eye'} size={18} />
+        </button>
+      </div>
+      {showRequirements && (
+        <div className="password-hint">
+          Use 8 or more characters, including uppercase, lowercase, a number and a special character.
+        </div>
+      )}
+    </div>
+  );
 }
 
-function LoginPage() {
-  const [email, setEmail] = useState(''); const [password, setPassword] = useState(''); const [remember, setRemember] = useState(false); const [message, setMessage] = useState('');
-  function submit(e) { e.preventDefault(); setMessage('The login interface is ready. Connect your authentication API to enable sign-in.'); }
-  return <AuthShell><div className="auth-heading"><span className="auth-step">WELCOME BACK</span><h2>Sign in to Brightloop</h2><p>Enter your details to continue to your account.</p></div><form className="auth-form" onSubmit={submit}><div className="field"><label htmlFor="login-email">Email address</label><input id="login-email" type="email" value={email} onChange={e => setEmail(e.target.value)} placeholder="you@company.com" autoComplete="email" required /></div><PasswordInput value={password} onChange={e => setPassword(e.target.value)} /><div className="form-options"><label className="check-label"><input type="checkbox" checked={remember} onChange={e => setRemember(e.target.checked)} /><span className="custom-check"></span>Remember me</label><a href="/forgot-password">Forgot password?</a></div><button className="button button-primary button-full" type="submit">Sign in <Icon name="arrow" size={17} /></button><AuthMessage>{message}</AuthMessage></form><p className="auth-switch">New to Brightloop? <a href="/signup">Create an account</a></p></AuthShell>;
+function LoginPage({ onNavigate }) {
+  const { login, user, isAuthenticated, isLoading } = useAuth();
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [remember, setRemember] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
+  const [message, setMessage] = useState(null);
+
+  const navigate = onNavigate || ((toPath) => {
+    window.history.pushState({}, '', toPath);
+    window.dispatchEvent(new PopStateEvent('popstate'));
+    window.scrollTo(0, 0);
+  });
+
+  // If already authenticated and session hydrated, redirect to role dashboard
+  useEffect(() => {
+    if (!isLoading && isAuthenticated && user) {
+      if (user.role === 'customer') {
+        navigate('/portal/dashboard');
+      } else if (user.role === 'admin' || user.role === 'staff') {
+        navigate('/admin/dashboard');
+      }
+    }
+  }, [isLoading, isAuthenticated, user]);
+
+  async function submit(e) {
+    e.preventDefault();
+    if (submitting) return;
+
+    const trimmedEmail = email.trim();
+    if (!trimmedEmail) {
+      setMessage({ type: 'error', text: 'Please enter your email address.' });
+      return;
+    }
+    if (!password) {
+      setMessage({ type: 'error', text: 'Please enter your password.' });
+      return;
+    }
+
+    setSubmitting(true);
+    setMessage(null);
+
+    try {
+      const loggedInUser = await login({ email: trimmedEmail, password });
+
+      if (loggedInUser.role === 'customer') {
+        navigate('/portal/dashboard');
+      } else if (loggedInUser.role === 'admin' || loggedInUser.role === 'staff') {
+        navigate('/admin/dashboard');
+      } else {
+        setMessage({
+          type: 'error',
+          text: 'Account role is not recognized. Please contact support.'
+        });
+      }
+    } catch (err) {
+      let errorText = 'Sign in failed. Please verify your credentials and try again.';
+
+      if (err.status === 401) {
+        errorText = err.message || 'Invalid email or password.';
+      } else if (err.status === 403) {
+        errorText = err.message || 'Your account is deactivated or restricted. Please contact support.';
+      } else if (err.status === 429) {
+        errorText = err.message || 'Too many sign in attempts. Please wait a few minutes before trying again.';
+      } else if (err.status === 0) {
+        errorText = 'Unable to connect to the authentication server. Please check your network or server availability.';
+      } else if (err.status >= 500) {
+        errorText = 'An unexpected server error occurred. Please try again later.';
+      } else if (err.message) {
+        errorText = err.message;
+      }
+
+      setMessage({ type: 'error', text: errorText });
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  return (
+    <AuthShell>
+      <div className="auth-heading">
+        <span className="auth-step">WELCOME BACK</span>
+        <h2>Sign in to Brightloop</h2>
+        <p>Enter your details to continue to your account.</p>
+      </div>
+
+      <form className="auth-form" onSubmit={submit}>
+        <div className="field">
+          <label htmlFor="login-email">Email address</label>
+          <input
+            id="login-email"
+            type="email"
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+            placeholder="you@company.com"
+            autoComplete="email"
+            disabled={submitting}
+            required
+          />
+        </div>
+
+        <PasswordInput
+          value={password}
+          onChange={(e) => setPassword(e.target.value)}
+          disabled={submitting}
+        />
+
+        <div className="form-options">
+          <label className="check-label">
+            <input
+              type="checkbox"
+              checked={remember}
+              onChange={(e) => setRemember(e.target.checked)}
+              disabled={submitting}
+            />
+            <span className="custom-check"></span>
+            Remember me
+          </label>
+          <a href="/forgot-password">Forgot password?</a>
+        </div>
+
+        <button
+          className="button button-primary button-full"
+          type="submit"
+          disabled={submitting || isLoading}
+        >
+          {submitting ? 'Signing in...' : <>Sign in <Icon name="arrow" size={17} /></>}
+        </button>
+
+        <AuthMessage type={message?.type || 'info'}>
+          {message?.text || message}
+        </AuthMessage>
+      </form>
+
+      <p className="auth-switch">
+        New to Brightloop? <a href="/signup">Create an account</a>
+      </p>
+    </AuthShell>
+  );
 }
 
-function SignupPage() {
-  const [form, setForm] = useState({ name: '', business: '', email: '', password: '', confirm: '' }); const [terms, setTerms] = useState(false); const [message, setMessage] = useState('');
+function SignupPage({ onNavigate }) {
+  const { register, isAuthenticated, user, isLoading } = useAuth();
+  const [form, setForm] = useState({ name: '', business: '', email: '', password: '', confirm: '' });
+  const [terms, setTerms] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
+  const [message, setMessage] = useState(null);
+
+  const navigate = onNavigate || ((toPath) => {
+    window.history.pushState({}, '', toPath);
+    window.dispatchEvent(new PopStateEvent('popstate'));
+    window.scrollTo(0, 0);
+  });
+
+  // If already authenticated and session hydrated, redirect to dashboard
+  useEffect(() => {
+    if (!isLoading && isAuthenticated && user) {
+      if (user.role === 'customer') {
+        navigate('/portal/dashboard');
+      } else if (user.role === 'admin' || user.role === 'staff') {
+        navigate('/admin/dashboard');
+      }
+    }
+  }, [isLoading, isAuthenticated, user]);
+
   const update = (key) => (e) => setForm({ ...form, [key]: e.target.value });
-  function submit(e) { e.preventDefault(); const strong = form.password.length > 8 && /[A-Z]/.test(form.password) && /[a-z]/.test(form.password) && /[^A-Za-z0-9]/.test(form.password); if (!strong) return setMessage('Please meet all password requirements before continuing.'); if (form.password !== form.confirm) return setMessage('Your passwords do not match.'); if (!terms) return setMessage('Please accept the Terms and Conditions to continue.'); setMessage('The registration interface is ready. Connect your signup API to create accounts.'); }
-  return <AuthShell><div className="auth-heading"><span className="auth-step">GET STARTED</span><h2>Create your account</h2><p>Start exploring business software with Brightloop.</p></div><form className="auth-form signup-form" onSubmit={submit}><div className="field"><label htmlFor="signup-name">Full name</label><input id="signup-name" value={form.name} onChange={update('name')} placeholder="Your full name" autoComplete="name" required /></div><div className="field"><label htmlFor="signup-business">Business name</label><input id="signup-business" value={form.business} onChange={update('business')} placeholder="Your company name" autoComplete="organization" required /></div><div className="field"><label htmlFor="signup-email">Work email</label><input id="signup-email" type="email" value={form.email} onChange={update('email')} placeholder="you@company.com" autoComplete="email" required /></div><PasswordInput label="Create password" value={form.password} onChange={update('password')} placeholder="Create a strong password" autoComplete="new-password" showRequirements /><PasswordInput label="Confirm password" value={form.confirm} onChange={update('confirm')} placeholder="Enter your password again" autoComplete="new-password" /><label className="check-label terms-check"><input type="checkbox" checked={terms} onChange={e => setTerms(e.target.checked)} /><span className="custom-check"></span><span>I agree to the <a href="/#contact">Terms and Conditions</a> and <a href="/#contact">Privacy Policy</a>.</span></label><button className="button button-primary button-full" type="submit">Create account <Icon name="arrow" size={17} /></button><AuthMessage>{message}</AuthMessage></form><p className="auth-switch">Already have an account? <a href="/login">Sign in</a></p></AuthShell>;
+
+  async function submit(e) {
+    e.preventDefault();
+    if (submitting) return;
+
+    // 1. Client-side field validations
+    const trimmedName = form.name.trim();
+    const trimmedEmail = form.email.trim();
+    const trimmedBusiness = form.business.trim();
+
+    if (!trimmedName) {
+      setMessage({ type: 'error', text: 'Please enter your full name.' });
+      return;
+    }
+    if (!trimmedEmail) {
+      setMessage({ type: 'error', text: 'Please enter your work email.' });
+      return;
+    }
+
+    // Password policy checks
+    const pw = form.password;
+    const ruleLength = pw.length >= 8;
+    const ruleByteLength = new TextEncoder().encode(pw).length <= 72;
+    const ruleUpper = /[A-Z]/.test(pw);
+    const ruleLower = /[a-z]/.test(pw);
+    const ruleDigit = /[0-9]/.test(pw);
+    const ruleSpecial = /[^A-Za-z0-9]/.test(pw);
+
+    if (!ruleLength || !ruleUpper || !ruleLower || !ruleDigit || !ruleSpecial) {
+      setMessage({
+        type: 'error',
+        text: 'Password must be at least 8 characters and include uppercase, lowercase, a number, and a special character.'
+      });
+      return;
+    }
+
+    if (!ruleByteLength) {
+      setMessage({
+        type: 'error',
+        text: 'Password exceeds maximum length (72 bytes).'
+      });
+      return;
+    }
+
+    if (pw !== form.confirm) {
+      setMessage({ type: 'error', text: 'Passwords do not match.' });
+      return;
+    }
+
+    if (!terms) {
+      setMessage({ type: 'error', text: 'Please agree to the Terms and Conditions to continue.' });
+      return;
+    }
+
+    // 2. Map fields to backend registration contract
+    const nameParts = trimmedName.split(/\s+/);
+    const firstName = nameParts[0] || '';
+    const lastName = nameParts.slice(1).join(' ') || undefined;
+
+    const payload = {
+      email: trimmedEmail.toLowerCase(),
+      password: pw,
+      first_name: firstName,
+      ...(lastName ? { last_name: lastName } : {}),
+      ...(trimmedBusiness ? { business_name: trimmedBusiness } : {})
+    };
+
+    setSubmitting(true);
+    setMessage(null);
+
+    try {
+      await register(payload);
+      setMessage({
+        type: 'success',
+        text: 'Account created successfully! Redirecting you to sign in...'
+      });
+      // Clear sensitive fields
+      setForm((prev) => ({ ...prev, password: '', confirm: '' }));
+      // Smoothly navigate to login after brief confirmation
+      setTimeout(() => {
+        navigate('/login');
+      }, 1500);
+    } catch (err) {
+      let errorText = 'Registration failed. Please check your information.';
+
+      if (err.status === 409) {
+        errorText = 'An account with this email address already exists. Please sign in instead.';
+      } else if (err.status === 422 || err.status === 400) {
+        if (Array.isArray(err.errors) && err.errors.length > 0) {
+          errorText = err.errors.map((issue) => issue.message).join('. ');
+        } else {
+          errorText = err.message || 'Validation failed. Please verify your details.';
+        }
+      } else if (err.status === 429) {
+        errorText = 'Too many registration attempts from this IP. Please try again later.';
+      } else if (err.status === 0) {
+        errorText = 'Unable to connect to the registration server. Please check your network connection.';
+      } else if (err.message) {
+        errorText = err.message;
+      }
+
+      setMessage({ type: 'error', text: errorText });
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  return (
+    <AuthShell>
+      <div className="auth-heading">
+        <span className="auth-step">GET STARTED</span>
+        <h2>Create your account</h2>
+        <p>Start exploring business software with Brightloop.</p>
+      </div>
+
+      <form className="auth-form signup-form" onSubmit={submit}>
+        <div className="field">
+          <label htmlFor="signup-name">Full name</label>
+          <input
+            id="signup-name"
+            value={form.name}
+            onChange={update('name')}
+            placeholder="Your full name"
+            autoComplete="name"
+            disabled={submitting}
+            required
+          />
+        </div>
+
+        <div className="field">
+          <label htmlFor="signup-business">Business name</label>
+          <input
+            id="signup-business"
+            value={form.business}
+            onChange={update('business')}
+            placeholder="Your company name"
+            autoComplete="organization"
+            disabled={submitting}
+            required
+          />
+        </div>
+
+        <div className="field">
+          <label htmlFor="signup-email">Work email</label>
+          <input
+            id="signup-email"
+            type="email"
+            value={form.email}
+            onChange={update('email')}
+            placeholder="you@company.com"
+            autoComplete="email"
+            disabled={submitting}
+            required
+          />
+        </div>
+
+        <PasswordInput
+          label="Create password"
+          value={form.password}
+          onChange={update('password')}
+          placeholder="Create a strong password"
+          autoComplete="new-password"
+          disabled={submitting}
+          showRequirements
+        />
+
+        <PasswordInput
+          label="Confirm password"
+          value={form.confirm}
+          onChange={update('confirm')}
+          placeholder="Enter your password again"
+          autoComplete="new-password"
+          disabled={submitting}
+        />
+
+        <label className="check-label terms-check">
+          <input
+            type="checkbox"
+            checked={terms}
+            onChange={(e) => setTerms(e.target.checked)}
+            disabled={submitting}
+          />
+          <span className="custom-check"></span>
+          <span>
+            I agree to the <a href="/#contact">Terms and Conditions</a> and <a href="/#contact">Privacy Policy</a>.
+          </span>
+        </label>
+
+        <button
+          className="button button-primary button-full"
+          type="submit"
+          disabled={submitting}
+        >
+          {submitting ? 'Creating account...' : <>Create account <Icon name="arrow" size={17} /></>}
+        </button>
+
+        <AuthMessage type={message?.type || 'info'}>
+          {message?.text || message}
+        </AuthMessage>
+      </form>
+
+      <p className="auth-switch">
+        Already have an account? <a href="/login">Sign in</a>
+      </p>
+    </AuthShell>
+  );
 }
 
 function ForgotPasswordPage() {
@@ -201,6 +600,7 @@ function ForgotPasswordPage() {
 }
 
 export default function App() {
+  const { user, isAuthenticated, isLoading } = useAuth();
   const [currentPath, setCurrentPath] = useState(
     () => window.location.pathname.replace(/\/+$/, '') || '/'
   );
@@ -219,6 +619,30 @@ export default function App() {
     window.scrollTo(0, 0);
   };
 
+  // Route protection and guard logic
+  useEffect(() => {
+    if (isLoading) return; // Wait until session hydration completes
+
+    const isAdminRoute = currentPath.startsWith('/admin');
+    const isPortalRoute = currentPath.startsWith('/portal');
+
+    if (isAdminRoute) {
+      if (!isAuthenticated || !user) {
+        navigate('/login');
+      } else if (user.role !== 'admin' && user.role !== 'staff') {
+        // Customer tried to access admin route -> redirect to customer portal
+        navigate('/portal/dashboard');
+      }
+    } else if (isPortalRoute) {
+      if (!isAuthenticated || !user) {
+        navigate('/login');
+      } else if (user.role !== 'customer') {
+        // Admin or staff tried to access customer portal -> redirect to admin dashboard
+        navigate('/admin/dashboard');
+      }
+    }
+  }, [currentPath, isLoading, isAuthenticated, user]);
+
   useEffect(() => {
     if (!currentPath.startsWith('/admin') && !currentPath.startsWith('/portal')) {
       const title =
@@ -233,16 +657,54 @@ export default function App() {
     }
   }, [currentPath]);
 
+  // Loading screen during hydration of protected routes (prevents content flash)
+  if (isLoading && (currentPath.startsWith('/admin') || currentPath.startsWith('/portal'))) {
+    return (
+      <div style={{
+        minHeight: '100vh',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        background: '#0a101d',
+        color: '#fff',
+        fontFamily: 'system-ui, sans-serif'
+      }}>
+        <div style={{ textAlign: 'center' }}>
+          <div style={{
+            width: 38,
+            height: 38,
+            border: '3px solid rgba(255,255,255,0.12)',
+            borderTopColor: '#376bf4',
+            borderRadius: '50%',
+            margin: '0 auto 16px',
+            animation: 'spin 0.8s linear infinite'
+          }} />
+          <style>{`@keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }`}</style>
+          <p style={{ color: '#94a3b8', fontSize: 13, letterSpacing: '0.02em', margin: 0 }}>
+            Verifying Brightloop session...
+          </p>
+        </div>
+      </div>
+    );
+  }
+
+  // Guarded route rendering
   if (currentPath.startsWith('/admin')) {
+    if (!isAuthenticated || (user?.role !== 'admin' && user?.role !== 'staff')) {
+      return null; // Will redirect via useEffect
+    }
     return <AdminLayout currentPath={currentPath} onNavigate={navigate} />;
   }
 
   if (currentPath.startsWith('/portal')) {
+    if (!isAuthenticated || user?.role !== 'customer') {
+      return null; // Will redirect via useEffect
+    }
     return <CustomerPortalLayout currentPath={currentPath} onNavigate={navigate} />;
   }
 
-  if (currentPath === '/login') return <LoginPage />;
-  if (currentPath === '/signup') return <SignupPage />;
+  if (currentPath === '/login') return <LoginPage onNavigate={navigate} />;
+  if (currentPath === '/signup') return <SignupPage onNavigate={navigate} />;
   if (currentPath === '/forgot-password') return <ForgotPasswordPage />;
   return <LandingPage />;
 }

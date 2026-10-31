@@ -2,8 +2,10 @@ import React, { useState } from 'react';
 import { MY_QUOTATIONS } from '../mockData';
 import { StatusBadge } from '../components/StatusBadge';
 import { AdminIcon } from '../../admin/AdminIcons';
+import { useAuth } from '../../context/AuthContext.jsx';
 
 export function MyQuotationsPage() {
+  const { user } = useAuth();
   const [quotations, setQuotations] = useState(MY_QUOTATIONS);
   const [activeQuoteModal, setActiveQuoteModal] = useState(null);
   const [toastMessage, setToastMessage] = useState('');
@@ -187,6 +189,9 @@ export function MyQuotationsPage() {
             </div>
 
             <div style={{ backgroundColor: '#f8fafc', padding: 14, borderRadius: 8, marginBottom: 16, fontSize: 13 }}>
+              <div style={{ marginBottom: 6 }}>
+                <strong>Client:</strong> {user?.business_name || user?.businessName || (user?.first_name ? `${user.first_name} ${user.last_name || ''}`.trim() : 'Registered Client')}
+              </div>
               <div style={{ marginBottom: 6 }}>
                 <strong>Product:</strong> {activeQuoteModal.productName}
               </div>

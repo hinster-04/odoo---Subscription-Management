@@ -4,8 +4,14 @@ import { OverviewCard } from '../../admin/components/OverviewCard';
 import { MonthlySpendingChart, PaidVsOutstandingChart } from '../components/CustomerCharts';
 import { StatusBadge } from '../components/StatusBadge';
 import { ANALYTICS_DATA, CURRENT_CUSTOMER } from '../mockData';
+import { useAuth } from '../../context/AuthContext.jsx';
 
 export function DashboardPage({ onNavigate }) {
+  const { user } = useAuth();
+  const customer = user || CURRENT_CUSTOMER;
+  const firstName = customer.firstName || customer.first_name || 'Customer';
+  const businessName = customer.businessName || customer.business_name || (firstName ? `${firstName}'s Organization` : 'My Organization');
+
   return (
     <div className="customer-dashboard-page">
       {/* Welcome Banner */}
@@ -26,10 +32,10 @@ export function DashboardPage({ onNavigate }) {
       >
         <div>
           <h2 style={{ fontSize: 18, margin: '0 0 4px', color: '#14213d', fontFamily: 'Manrope, sans-serif' }}>
-            Welcome back, {CURRENT_CUSTOMER.first_name}!
+            Welcome back, {firstName}!
           </h2>
           <p style={{ margin: 0, fontSize: 13, color: '#64748b' }}>
-            Account for <strong>{CURRENT_CUSTOMER.business_name}</strong>. Here is your current subscription portfolio summary.
+            Account for <strong>{businessName}</strong>. Here is your current subscription portfolio summary.
           </p>
         </div>
         <button

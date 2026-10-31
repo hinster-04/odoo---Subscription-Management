@@ -14,10 +14,11 @@ import { MyPaymentsPage } from './pages/MyPaymentsPage';
 import { MyDiscountsPage } from './pages/MyDiscountsPage';
 import { MyAccountPage } from './pages/MyAccountPage';
 
-// Import customer portal styling (which also inherits the main tokens)
+import { useAuth } from '../context/AuthContext.jsx';
 import './customer-portal.css';
 
 export function CustomerPortalLayout({ currentPath, onNavigate }) {
+  const { logout } = useAuth();
   // Left sidebar is always visible with icons; expanded by default on desktop, collapsible
   const [isCollapsed, setIsCollapsed] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
@@ -42,11 +43,15 @@ export function CustomerPortalLayout({ currentPath, onNavigate }) {
     document.title = `${activeRoute.label} | Brightloop Customer Portal`;
   }, [activeRoute]);
 
-  const handleLogout = () => {
-    if (onNavigate) {
-      onNavigate('/login');
-    } else {
-      window.location.href = '/login';
+  const handleLogout = async () => {
+    try {
+      await logout();
+    } finally {
+      if (onNavigate) {
+        onNavigate('/login');
+      } else {
+        window.location.href = '/login';
+      }
     }
   };
 

@@ -1,10 +1,42 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { CURRENT_CUSTOMER } from '../mockData';
 import { AdminIcon } from '../../admin/AdminIcons';
+import { useAuth } from '../../context/AuthContext.jsx';
+
+const mapUserProfile = (u) => {
+  if (!u) return CURRENT_CUSTOMER;
+  return {
+    ...CURRENT_CUSTOMER,
+    id: u.id || CURRENT_CUSTOMER.id,
+    auth_id: u.auth_id || u.id || CURRENT_CUSTOMER.auth_id,
+    email: u.email || CURRENT_CUSTOMER.email,
+    first_name: u.first_name ?? u.firstName ?? CURRENT_CUSTOMER.first_name,
+    last_name: u.last_name ?? u.lastName ?? CURRENT_CUSTOMER.last_name,
+    business_name: u.business_name ?? u.businessName ?? CURRENT_CUSTOMER.business_name,
+    business_type: u.business_type ?? u.businessType ?? CURRENT_CUSTOMER.business_type,
+    phone: u.phone ?? CURRENT_CUSTOMER.phone,
+    address: u.address ?? CURRENT_CUSTOMER.address,
+    city: u.city ?? CURRENT_CUSTOMER.city,
+    state: u.state ?? CURRENT_CUSTOMER.state,
+    country: u.country ?? CURRENT_CUSTOMER.country,
+    postal_code: u.postal_code ?? u.postalCode ?? CURRENT_CUSTOMER.postal_code,
+    role: u.role || 'customer',
+    is_active: u.is_active !== undefined ? u.is_active : true,
+    email_verified: u.email_verified !== undefined ? u.email_verified : true,
+    created_at: u.created_at || CURRENT_CUSTOMER.created_at,
+    updated_at: u.updated_at || CURRENT_CUSTOMER.updated_at,
+  };
+};
 
 export function MyAccountPage({ onLogout }) {
-  // Account details state (grounded in users and auth tables)
-  const [userProfile, setUserProfile] = useState(CURRENT_CUSTOMER);
+  const { user } = useAuth();
+  const [userProfile, setUserProfile] = useState(() => mapUserProfile(user));
+
+  useEffect(() => {
+    if (user) {
+      setUserProfile(mapUserProfile(user));
+    }
+  }, [user]);
   const [isEditing, setIsEditing] = useState(false);
   const [profileMessage, setProfileMessage] = useState('');
 
@@ -16,11 +48,12 @@ export function MyAccountPage({ onLogout }) {
   const [passwordMessage, setPasswordMessage] = useState(null);
 
   // Live password validation checks
-  const ruleLength = newPw.length > 8;
+  const ruleLength = newPw.length >= 8;
   const ruleUppercase = /[A-Z]/.test(newPw);
   const ruleLowercase = /[a-z]/.test(newPw);
+  const ruleDigit = /[0-9]/.test(newPw);
   const ruleSpecial = /[^A-Za-z0-9]/.test(newPw);
-  const isPasswordValid = ruleLength && ruleUppercase && ruleLowercase && ruleSpecial;
+  const isPasswordValid = ruleLength && ruleUppercase && ruleLowercase && ruleDigit && ruleSpecial;
 
   const handleProfileUpdate = (e) => {
     e.preventDefault();
@@ -93,7 +126,7 @@ export function MyAccountPage({ onLogout }) {
                 Customer Profile (Database Records)
               </h3>
               <p style={{ margin: 0, fontSize: 12.5, color: '#64748b' }}>
-                Registered on {new Date(userProfile.created_at).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })}
+                Registered on {userProfile.created_at && !isNaN(new Date(userProfile.created_at).getTime()) ? new Date(userProfile.created_at).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' }) : 'Recently'}
               </p>
             </div>
             <button
@@ -143,8 +176,8 @@ export function MyAccountPage({ onLogout }) {
                   readOnly
                   title="Email is verified and linked to auth UUID"
                 />
-                <small style={{ color: '#059669', fontSize: 11 }}>
-                  ✓ Email verified & active ({userProfile.auth_id})
+                <small style={{ color: userProfile.email_verified ? '#059669' : '#d97706', fontSize: 11 }}>
+                  {userProfile.email_verified ? '✓ Email verified' : '• Registered'} & {userProfile.is_active ? 'active' : 'inactive'} ({userProfile.auth_id || userProfile.id})
                 </small>
               </div>
 
