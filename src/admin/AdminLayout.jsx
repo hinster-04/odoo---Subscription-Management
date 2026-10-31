@@ -7,6 +7,10 @@ import { ProductsPage } from './pages/ProductsPage';
 import { EmptyAdminPage } from './pages/EmptyAdminPage';
 import { QuotationsPage } from './pages/QuotationsPage';
 import { SubscriptionsPage } from './pages/SubscriptionsPage';
+import { InvoicesPage } from './pages/InvoicesPage';
+import { PaymentsPage } from './pages/PaymentsPage';
+import { DiscountsPage } from './pages/DiscountsPage';
+import { TaxesPage } from './pages/TaxesPage';
 import './admin.css';
 
 export function AdminLayout({ currentPath, onNavigate }) {
@@ -32,6 +36,10 @@ export function AdminLayout({ currentPath, onNavigate }) {
     currentPath === '/admin/dashboard';
   const isQuotations = activeRoute.id === 'quotations' || currentPath === '/admin/quotations';
   const isSubscriptions = activeRoute.id === 'subscriptions' || currentPath === '/admin/subscriptions';
+  const isInvoices = activeRoute.id === 'invoices' || currentPath === '/admin/invoices';
+  const isPayments = activeRoute.id === 'payments' || currentPath === '/admin/payments';
+  const isDiscounts = activeRoute.id === 'discounts' || currentPath === '/admin/discounts';
+  const isTaxes = activeRoute.id === 'taxes' || currentPath === '/admin/taxes';
 
   const isProductsModule =
     activeRoute.id === 'products' ||
@@ -70,6 +78,14 @@ export function AdminLayout({ currentPath, onNavigate }) {
               <QuotationsPage />
             ) : isSubscriptions ? (
               <SubscriptionsPage />
+            ) : isInvoices ? (
+              <InvoicesPage />
+            ) : isPayments ? (
+              <PaymentsPage />
+            ) : isDiscounts ? (
+              <DiscountsPage />
+            ) : isTaxes ? (
+              <TaxesPage />
             ) : isProductsModule ? (
               <ProductsPage
                 onNavigate={onNavigate}

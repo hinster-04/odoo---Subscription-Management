@@ -4,8 +4,9 @@ const express = require('express');
 const cors = require('cors');
 
 const healthRouter = require('./routes/health.routes');
-const authRouter  = require('./routes/auth.routes');
-const testRouter  = require('./routes/test.routes');
+const authRouter = require('./routes/auth.routes');
+const testRouter = require('./routes/test.routes');
+const financeRouter = require('./modules/finance/finance.routes');
 const errorHandler = require('./middleware/error.middleware');
 
 const app = express();
@@ -28,7 +29,8 @@ app.use(express.urlencoded({ extended: true, limit: '10kb' }));
 
 // ── Routes ────────────────────────────────────────────────────────────────────
 app.use('/api/health', healthRouter);
-app.use('/api/auth',   authRouter);
+app.use('/api/auth', authRouter);
+app.use('/api/finance', financeRouter);
 
 // DEV ONLY — remove before production
 if (process.env.NODE_ENV !== 'production') {
