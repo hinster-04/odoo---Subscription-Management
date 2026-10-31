@@ -1,6 +1,3 @@
-// This is your Prisma schema file,
-// learn more about it in the docs: https://pris.ly/d/prisma-schema
-
 generator client {
   provider = "prisma-client-js"
 }
@@ -8,4 +5,112 @@ generator client {
 datasource db {
   provider = "postgresql"
   url      = env("DATABASE_URL")
+}
+
+model admin {
+  id          String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  auth_id     String   @unique @db.Uuid
+  first_name  String   @db.VarChar(100)
+  last_name   String?  @db.VarChar(100)
+  phone       String?  @db.VarChar(20)
+  designation String?  @db.VarChar(100)
+  created_at  DateTime @default(now()) @db.Timestamptz(6)
+  updated_at  DateTime @default(now()) @db.Timestamptz(6)
+  auth        auth     @relation(fields: [auth_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@index([auth_id], map: "idx_admin_auth_id")
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model auth {
+  id             String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  email          String   @unique @db.VarChar(255)
+  password_hash  String
+  role           String   @db.VarChar(20)
+  is_active      Boolean  @default(true)
+  email_verified Boolean  @default(false)
+  created_at     DateTime @default(now()) @db.Timestamptz(6)
+  updated_at     DateTime @default(now()) @db.Timestamptz(6)
+  admin          admin?
+  users          users?
+
+  @@index([role], map: "idx_auth_role")
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model products {
+  id               String             @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  name             String             @db.VarChar(200)
+  slug             String             @unique @db.VarChar(220)
+  category         String?            @db.VarChar(100)
+  description      String?
+  product_type     String?            @db.VarChar(100)
+  sales_price      Decimal            @default(0) @db.Decimal(12, 2)
+  cost_price       Decimal            @default(0) @db.Decimal(12, 2)
+  notes            String?
+  image_url        String?
+  is_active        Boolean            @default(true)
+  created_at       DateTime           @default(now()) @db.Timestamptz(6)
+  updated_at       DateTime           @default(now()) @db.Timestamptz(6)
+  product_addons   product_addons[]
+  product_variants product_variants[]
+
+  @@index([is_active], map: "idx_products_active")
+  @@index([category], map: "idx_products_category")
+  @@index([created_at(sort: Desc)], map: "idx_products_created_at")
+  @@index([product_type], map: "idx_products_type")
+}
+
+model users {
+  id            String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  auth_id       String   @unique @db.Uuid
+  first_name    String   @db.VarChar(100)
+  last_name     String?  @db.VarChar(100)
+  business_name String?  @db.VarChar(200)
+  business_type String?  @db.VarChar(100)
+  phone         String?  @db.VarChar(20)
+  address       String?
+  city          String?  @db.VarChar(100)
+  state         String?  @db.VarChar(100)
+  country       String?  @db.VarChar(100)
+  postal_code   String?  @db.VarChar(20)
+  created_at    DateTime @default(now()) @db.Timestamptz(6)
+  updated_at    DateTime @default(now()) @db.Timestamptz(6)
+  auth          auth     @relation(fields: [auth_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@index([auth_id], map: "idx_users_auth_id")
+  @@index([business_name], map: "idx_users_business_name")
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model product_addons {
+  id          String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  product_id  String   @db.Uuid
+  name        String   @db.VarChar(200)
+  description String?
+  price       Decimal  @default(0.00) @db.Decimal(12, 2)
+  cost_price  Decimal  @default(0.00) @db.Decimal(12, 2)
+  is_active   Boolean  @default(true)
+  created_at  DateTime @default(now()) @db.Timestamptz(6)
+  updated_at  DateTime @default(now()) @db.Timestamptz(6)
+  products    products @relation(fields: [product_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@index([is_active], map: "idx_product_addons_active")
+  @@index([product_id], map: "idx_product_addons_product_id")
+}
+
+model product_variants {
+  id               String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  product_id       String   @db.Uuid
+  variant_name     String   @db.VarChar(100)
+  variant_value    String   @db.VarChar(100)
+  price_adjustment Decimal  @default(0.00) @db.Decimal(12, 2)
+  is_active        Boolean  @default(true)
+  created_at       DateTime @default(now()) @db.Timestamptz(6)
+  updated_at       DateTime @default(now()) @db.Timestamptz(6)
+  products         products @relation(fields: [product_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@unique([product_id, variant_name, variant_value], map: "uq_product_variant_name_value")
+  @@index([is_active], map: "idx_product_variants_active")
+  @@index([product_id], map: "idx_product_variants_product_id")
 }

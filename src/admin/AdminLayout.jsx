@@ -3,6 +3,7 @@ import { Sidebar } from './components/Sidebar';
 import { TopNav } from './components/TopNav';
 import { getRouteByPath } from './adminRoutes';
 import { DashboardPage } from './pages/DashboardPage';
+import { ProductsPage } from './pages/ProductsPage';
 import { EmptyAdminPage } from './pages/EmptyAdminPage';
 import { QuotationsPage } from './pages/QuotationsPage';
 import { SubscriptionsPage } from './pages/SubscriptionsPage';
@@ -31,6 +32,11 @@ export function AdminLayout({ currentPath, onNavigate }) {
     currentPath === '/admin/dashboard';
   const isQuotations = activeRoute.id === 'quotations' || currentPath === '/admin/quotations';
   const isSubscriptions = activeRoute.id === 'subscriptions' || currentPath === '/admin/subscriptions';
+
+  const isProductsModule =
+    activeRoute.id === 'products' ||
+    activeRoute.id === 'product-variants' ||
+    activeRoute.id === 'add-ons';
 
   return (
     <div className={`admin-app-root ${isCollapsed ? 'sidebar-collapsed' : ''}`}>
@@ -64,6 +70,17 @@ export function AdminLayout({ currentPath, onNavigate }) {
               <QuotationsPage />
             ) : isSubscriptions ? (
               <SubscriptionsPage />
+            ) : isProductsModule ? (
+              <ProductsPage
+                onNavigate={onNavigate}
+                initialTab={
+                  activeRoute.id === 'product-variants'
+                    ? 'variants'
+                    : activeRoute.id === 'add-ons'
+                      ? 'addons'
+                      : 'general'
+                }
+              />
             ) : (
               <EmptyAdminPage route={activeRoute} />
             )}

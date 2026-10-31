@@ -138,3 +138,85 @@ export function getRouteByPath(currentPath) {
     ADMIN_ROUTES[0]
   );
 }
+
+// Navigation structure organized into expandable groups and standalone items
+export const ADMIN_NAV_GROUPS = [
+  {
+    type: 'standalone',
+    id: 'dashboard',
+    label: 'Dashboard',
+    path: '/admin/dashboard',
+    aliasPath: '/admin',
+    icon: 'dashboard'
+  },
+  {
+    type: 'group',
+    id: 'catalog',
+    label: 'Catalog',
+    icon: 'catalog',
+    items: [
+      { id: 'products', label: 'Products', path: '/admin/products', icon: 'products' },
+      { id: 'subscription-plans', label: 'Subscription Plans', path: '/admin/subscription-plans', icon: 'plans' }
+    ]
+  },
+  {
+    type: 'group',
+    id: 'people',
+    label: 'People',
+    icon: 'people',
+    items: [
+      { id: 'customers', label: 'Customers', path: '/admin/customers', icon: 'customers' },
+      { id: 'staff', label: 'Staff Management', path: '/admin/staff', icon: 'staff' }
+    ]
+  },
+  {
+    type: 'group',
+    id: 'sales',
+    label: 'Sales',
+    icon: 'sales',
+    items: [
+      { id: 'quotations', label: 'Quotations', path: '/admin/quotations', icon: 'quotations' },
+      { id: 'quotation-templates', label: 'Quotation Templates', path: '/admin/quotation-templates', icon: 'quotationTemplates' },
+      { id: 'subscriptions', label: 'Subscriptions', path: '/admin/subscriptions', icon: 'subscriptions' }
+    ]
+  },
+  {
+    type: 'group',
+    id: 'finance',
+    label: 'Finance',
+    icon: 'finance',
+    items: [
+      { id: 'invoices', label: 'Invoices', path: '/admin/invoices', icon: 'invoices' },
+      { id: 'payments', label: 'Payments', path: '/admin/payments', icon: 'payments' },
+      { id: 'discounts', label: 'Discounts', path: '/admin/discounts', icon: 'discounts' },
+      { id: 'taxes', label: 'Taxes', path: '/admin/taxes', icon: 'taxes' }
+    ]
+  },
+  {
+    type: 'standalone',
+    id: 'reports',
+    label: 'Reports',
+    path: '/admin/reports',
+    icon: 'reports'
+  },
+  {
+    type: 'standalone',
+    id: 'settings',
+    label: 'Settings',
+    path: '/admin/settings',
+    icon: 'settings'
+  }
+];
+
+export function getGroupIdForPath(currentPath) {
+  const normalized = (currentPath || '').replace(/\/+$/, '') || '/admin';
+  for (const group of ADMIN_NAV_GROUPS) {
+    if (group.type === 'group' && group.items) {
+      if (group.items.some((item) => item.path === normalized || item.aliasPath === normalized)) {
+        return group.id;
+      }
+    }
+  }
+  return null;
+}
+
